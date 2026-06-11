@@ -53,8 +53,15 @@ assert_dies sub { Mcpd::Tools::jail("/srv/data", "/etc/passwd") },      "jail bl
 
 # ── Tools specs are well-formed ──────────────────────────────────────
 val $pack = Mcpd::Tools::all(+{ root => "/tmp" })
-assert_eq Mcpd::Schema::validate_all($pack), 5,    "stock pack is 5 valid tools"
-assert_eq scalar(Mcpd::Tools::names()), 5,         "stock roster pinned at 5"
+assert_eq Mcpd::Schema::validate_all($pack), 8,    "stock pack is 8 valid tools"
+assert_eq scalar(Mcpd::Tools::names()), 8,         "stock roster pinned at 8"
+
+val $ro_pack = Mcpd::Tools::all(+{ root => "/tmp", readonly => 1 })
+assert_eq Mcpd::Schema::validate_all($ro_pack), 6, "readonly pack drops 2 mutating tools"
+val %ro_names = map { $_->{name} => 1 } @$ro_pack
+assert_ok !$ro_names{fs_write},                    "readonly pack has no fs_write"
+assert_ok !$ro_names{sh_exec},                     "readonly pack has no sh_exec"
+assert_ok  $ro_names{fs_read},                     "readonly pack keeps fs_read"
 val $read_spec = Mcpd::Tools::fs_read(+{ root => "/tmp" })
 val $tmp_file = "/tmp/mcpd-fsread-$$.txt"
 spurt($tmp_file, "jail-read-ok")
@@ -63,6 +70,59 @@ unlink $tmp_file
 val $exec_spec = Mcpd::Tools::sh_exec(+{ allow => ["echo"] })
 assert_match qr/allowed/, $exec_spec->{run}->(+{ command => "echo allowed" }), "sh_exec runs allowlisted command"
 assert_dies sub { $exec_spec->{run}->(+{ command => "rm -rf /" }) }, "sh_exec blocks non-allowlisted command"
+
+# ── Tools: fs_list run path (pins the glob-not-opendir fix) ──────────
+val $list_dir = "/tmp/mcpd-list-$$"
+mkdir $list_dir
+spurt("$list_dir/b.txt", "x")
+spurt("$list_dir/a.txt", "x")
+spurt("$list_dir/.hidden", "x")
+val $list_spec = Mcpd::Tools::fs_list(+{ root => $list_dir })
+assert_eq $list_spec->{run}->(+{ path => "." }), ".hidden\na.txt\nb.txt", "fs_list sorted incl dotfiles, no . or .."
+assert_dies sub { $list_spec->{run}->(+{ path => "a.txt" }) }, "fs_list dies on non-dir"
+unlink "$list_dir/a.txt"
+unlink "$list_dir/b.txt"
+unlink "$list_dir/.hidden"
+rmdir $list_dir
+
+# ── Tools: fs_grep run path (pins the qr// subscript-hoist fix) ──────
+val $grep_dir = "/tmp/mcpd-grep-$$"
+mkdir $grep_dir
+spurt("$grep_dir/log.txt", "ok line\nERROR bad\nok again")
+val $grep_spec = Mcpd::Tools::fs_grep(+{ root => $grep_dir })
+assert_eq $grep_spec->{run}->(+{ path => "log.txt", pattern => "^ERROR" }), "ERROR bad", "fs_grep matches pattern param"
+unlink "$grep_dir/log.txt"
+rmdir $grep_dir
+
+# ── Tools: fs_write / fs_stat / fs_find ──────────────────────────────
+val $jail_dir = "/tmp/mcpd-tools-$$"
+mkdir $jail_dir
+mkdir "$jail_dir/sub"
+val $write_spec = Mcpd::Tools::fs_write(+{ root => $jail_dir })
+assert_match qr/wrote 8 bytes/, $write_spec->{run}->(+{ path => "out.txt", content => "payload!" }), "fs_write reports byte receipt"
+assert_eq slurp("$jail_dir/out.txt"), "payload!",  "fs_write lands inside jail"
+assert_dies sub { $write_spec->{run}->(+{ path => "../escape.txt", content => "x" }) }, "fs_write blocks jail escape"
+
+val $stat_spec = Mcpd::Tools::fs_stat(+{ root => $jail_dir })
+val $stat_out = $stat_spec->{run}->(+{ path => "out.txt" })
+assert_match qr/type: file/,  $stat_out, "fs_stat reports file type"
+assert_match qr/size: 8/,     $stat_out, "fs_stat reports size"
+assert_match qr/mtime: \d+/,  $stat_out, "fs_stat reports mtime"
+assert_match qr/type: dir/, $stat_spec->{run}->(+{ path => "sub" }), "fs_stat reports dir type"
+assert_dies sub { $stat_spec->{run}->(+{ path => "missing.txt" }) }, "fs_stat dies on missing path"
+
+spurt("$jail_dir/sub/deep.log", "x")
+val $find_spec = Mcpd::Tools::fs_find(+{ root => $jail_dir })
+val $found = $find_spec->{run}->(+{ path => ".", pattern => "\\.log\$" })
+assert_match qr{sub/deep\.log}, $found, "fs_find recurses into subdirs"
+assert_eq $find_spec->{run}->(+{ path => ".", pattern => "nomatch" }), "", "fs_find empty on no match"
+assert_dies sub { $find_spec->{run}->(+{ path => "out.txt", pattern => "x" }) }, "fs_find dies on non-dir start"
+val $shallow_spec = Mcpd::Tools::fs_find(+{ root => $jail_dir, max_depth => 1 })
+assert_ok $shallow_spec->{run}->(+{ path => ".", pattern => "deep" }) !~ /deep/, "fs_find honors max_depth"
+unlink "$jail_dir/sub/deep.log"
+unlink "$jail_dir/out.txt"
+rmdir "$jail_dir/sub"
+rmdir $jail_dir
 
 # ── Client envelope helpers (pure) ───────────────────────────────────
 val $env = +{ content => [ +{ type => "text", text => "4" }, +{ type => "text", text => "2" } ] }

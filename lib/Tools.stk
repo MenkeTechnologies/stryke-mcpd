@@ -1,9 +1,11 @@
 ## lib/Tools.stk — `use Mcpd::Tools`
 ##
-## The stock tool pack: filesystem read/list/grep, shell exec, and
-## system info as ready-made specs. Every generator takes an opts
-## hashref and returns a spec consumable by `Mcpd::Server::serve` —
-## compose your server from stock + custom tools in one list.
+## The stock tool pack: filesystem read/list/grep/find/stat/write,
+## shell exec, and system info as ready-made specs. Every generator
+## takes an opts hashref and returns a spec consumable by
+## `Mcpd::Server::serve` — compose your server from stock + custom
+## tools in one list. `all(+{readonly => 1})` drops the mutating
+## tools (fs_write, sh_exec).
 ##
 ## Filesystem tools are root-jailed: paths resolve under opts root
 ## (default cwd) and escapes (`..`, absolute paths outside root) die —
@@ -53,9 +55,13 @@ fn Mcpd::Tools::fs_list ($opts = undef) {
         sub {
             val $args = shift
             val $dir = Mcpd::Tools::jail($root, $args->{path})
-            opendir(my $dh, $dir) or die "cannot open dir: $dir"
-            val @entries = sort grep { $_ ne "." && $_ ne ".." } readdir($dh)
-            closedir($dh)
+            die "cannot open dir: $dir" unless -d $dir
+            # glob, not opendir: lexical dirhandles read empty inside
+            # closures (strykelang bug, see BUGS.md upstream).
+            val @entries = sort
+                map  { basename($_) }
+                grep { val $b = basename($_); $b ne "." && $b ne ".." }
+                (glob("$dir/.*"), glob("$dir/*"))
             join("\n", @entries)
         })
 }
@@ -68,8 +74,80 @@ fn Mcpd::Tools::fs_grep ($opts = undef) {
         +{ path => "string", pattern => "string" },
         sub {
             val $args = shift
-            val $re   = qr/$args->{pattern}/
-            join("\n", grep { /$re/ } split "\n", slurp(Mcpd::Tools::jail($root, $args->{path})))
+            # No qr// here: a qr object built from a hashref-derived
+            # string inside a closure mismatches (strykelang bug, see
+            # BUGS.md upstream). Direct /$pat/ interpolation works.
+            val $pat = $args->{pattern}
+            val @lines = split "\n", slurp(Mcpd::Tools::jail($root, $args->{path}))
+            join("\n", grep { /$pat/ } @lines)
+        })
+}
+
+## fs_write: write content to a file under the jail. opts: root.
+## Returns a byte-count receipt. Excluded from `all` in readonly mode.
+fn Mcpd::Tools::fs_write ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_write", "Write a file under $root",
+        +{ path => "string", content => "string" },
+        sub {
+            val $args = shift
+            val $dest = Mcpd::Tools::jail($root, $args->{path})
+            spurt($dest, $args->{content})
+            "wrote " . length($args->{content}) . " bytes to $args->{path}"
+        })
+}
+
+## fs_stat: type / size / mtime for a path under the jail. opts: root.
+fn Mcpd::Tools::fs_stat ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_stat", "Stat a path under $root: type, size, mtime",
+        +{ path => "string" },
+        sub {
+            val $args = shift
+            val $p = Mcpd::Tools::jail($root, $args->{path})
+            die "no such path: $args->{path}" unless -e $p
+            val @st = stat($p)
+            val $type = -d $p ? "dir" : -l $p ? "link" : "file"
+            "type: $type\nsize: $st[7]\nmtime: $st[9]"
+        })
+}
+
+## fs_find: recursive filename search under a jailed directory.
+## Params: path (start dir), pattern (regex on the path relative to
+## the start dir). opts: root, max_depth (default 10), max_results
+## (default 1000) — both caps keep a runaway query from flooding the
+## envelope.
+fn Mcpd::Tools::fs_find ($opts = undef) {
+    $opts //= +{}
+    val $root  = $opts->{root} // getcwd()
+    val $depth = $opts->{max_depth} // 10
+    val $cap   = $opts->{max_results} // 1000
+    Mcpd::Schema::tool("fs_find", "Recursively find files under $root whose relative path matches a regex",
+        +{ path => "string", pattern => "string" },
+        sub {
+            val $args = shift
+            val $start = Mcpd::Tools::jail($root, $args->{path})
+            die "not a directory: $args->{path}" unless -d $start
+            # Direct /$pat/ interpolation, not qr// — see fs_grep note.
+            val $pat = $args->{pattern}
+            var @hits
+            var @queue = ([$start, 0])
+            while (@queue && @hits < $cap) {
+                val $item = shift @queue
+                val ($dir, $d) = @$item
+                # glob, not opendir — see fs_list note.
+                for my $full (sort (glob("$dir/.*"), glob("$dir/*"))) {
+                    val $b = basename($full)
+                    next if $b eq "." || $b eq ".."
+                    val $rel = substr($full, length($start) + 1)
+                    push @hits, $rel if $rel =~ /$pat/
+                    last if @hits >= $cap
+                    push @queue, [$full, $d + 1] if -d $full && !-l $full && $d + 1 < $depth
+                }
+            }
+            join("\n", @hits)
         })
 }
 
@@ -105,16 +183,24 @@ fn Mcpd::Tools::sys_info {
 }
 
 ## The full stock pack as one list. opts forwarded to each generator.
+## opts readonly => 1 drops the mutating tools (fs_write, sh_exec) —
+## the safe default for servers that only need to answer questions.
 fn Mcpd::Tools::all ($opts = undef) {
     $opts //= +{}
-    [
+    var @pack = (
         Mcpd::Tools::fs_read($opts),
         Mcpd::Tools::fs_list($opts),
         Mcpd::Tools::fs_grep($opts),
-        Mcpd::Tools::sh_exec($opts),
-        Mcpd::Tools::sys_info(),
-    ]
+        Mcpd::Tools::fs_find($opts),
+        Mcpd::Tools::fs_stat($opts),
+    )
+    unless ($opts->{readonly}) {
+        push @pack, Mcpd::Tools::fs_write($opts)
+        push @pack, Mcpd::Tools::sh_exec($opts)
+    }
+    push @pack, Mcpd::Tools::sys_info()
+    \@pack
 }
 
-## All stock tool names this sublib ships.
-fn Mcpd::Tools::names { qw(fs_read fs_list fs_grep sh_exec sys_info) }
+## All stock tool names this sublib ships (full, non-readonly pack).
+fn Mcpd::Tools::names { qw(fs_read fs_list fs_grep fs_find fs_stat fs_write sh_exec sys_info) }
