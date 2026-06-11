@@ -90,7 +90,7 @@ fn Mcpd::Tools::fs_write ($opts = undef) {
     val $root = $opts->{root} // getcwd()
     Mcpd::Schema::tool("fs_write", "Write a file under $root",
         +{ path => "string", content => "string" },
-        sub {
+        fn {
             val $args = shift
             val $dest = Mcpd::Tools::jail($root, $args->{path})
             spurt($dest, $args->{content})
@@ -104,7 +104,7 @@ fn Mcpd::Tools::fs_stat ($opts = undef) {
     val $root = $opts->{root} // getcwd()
     Mcpd::Schema::tool("fs_stat", "Stat a path under $root: type, size, mtime",
         +{ path => "string" },
-        sub {
+        fn {
             val $args = shift
             val $p = Mcpd::Tools::jail($root, $args->{path})
             die "no such path: $args->{path}" unless -e $p
@@ -126,7 +126,7 @@ fn Mcpd::Tools::fs_find ($opts = undef) {
     val $cap   = $opts->{max_results} // 1000
     Mcpd::Schema::tool("fs_find", "Recursively find files under $root whose relative path matches a regex",
         +{ path => "string", pattern => "string" },
-        sub {
+        fn {
             val $args = shift
             val $start = Mcpd::Tools::jail($root, $args->{path})
             die "not a directory: $args->{path}" unless -d $start

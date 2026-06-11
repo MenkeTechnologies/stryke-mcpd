@@ -79,7 +79,7 @@ spurt("$list_dir/a.txt", "x")
 spurt("$list_dir/.hidden", "x")
 val $list_spec = Mcpd::Tools::fs_list(+{ root => $list_dir })
 assert_eq $list_spec->{run}->(+{ path => "." }), ".hidden\na.txt\nb.txt", "fs_list sorted incl dotfiles, no . or .."
-assert_dies sub { $list_spec->{run}->(+{ path => "a.txt" }) }, "fs_list dies on non-dir"
+assert_dies fn { $list_spec->{run}->(+{ path => "a.txt" }) }, "fs_list dies on non-dir"
 unlink "$list_dir/a.txt"
 unlink "$list_dir/b.txt"
 unlink "$list_dir/.hidden"
@@ -101,7 +101,7 @@ mkdir "$jail_dir/sub"
 val $write_spec = Mcpd::Tools::fs_write(+{ root => $jail_dir })
 assert_match qr/wrote 8 bytes/, $write_spec->{run}->(+{ path => "out.txt", content => "payload!" }), "fs_write reports byte receipt"
 assert_eq slurp("$jail_dir/out.txt"), "payload!",  "fs_write lands inside jail"
-assert_dies sub { $write_spec->{run}->(+{ path => "../escape.txt", content => "x" }) }, "fs_write blocks jail escape"
+assert_dies fn { $write_spec->{run}->(+{ path => "../escape.txt", content => "x" }) }, "fs_write blocks jail escape"
 
 val $stat_spec = Mcpd::Tools::fs_stat(+{ root => $jail_dir })
 val $stat_out = $stat_spec->{run}->(+{ path => "out.txt" })
@@ -109,14 +109,14 @@ assert_match qr/type: file/,  $stat_out, "fs_stat reports file type"
 assert_match qr/size: 8/,     $stat_out, "fs_stat reports size"
 assert_match qr/mtime: \d+/,  $stat_out, "fs_stat reports mtime"
 assert_match qr/type: dir/, $stat_spec->{run}->(+{ path => "sub" }), "fs_stat reports dir type"
-assert_dies sub { $stat_spec->{run}->(+{ path => "missing.txt" }) }, "fs_stat dies on missing path"
+assert_dies fn { $stat_spec->{run}->(+{ path => "missing.txt" }) }, "fs_stat dies on missing path"
 
 spurt("$jail_dir/sub/deep.log", "x")
 val $find_spec = Mcpd::Tools::fs_find(+{ root => $jail_dir })
 val $found = $find_spec->{run}->(+{ path => ".", pattern => "\\.log\$" })
 assert_match qr{sub/deep\.log}, $found, "fs_find recurses into subdirs"
 assert_eq $find_spec->{run}->(+{ path => ".", pattern => "nomatch" }), "", "fs_find empty on no match"
-assert_dies sub { $find_spec->{run}->(+{ path => "out.txt", pattern => "x" }) }, "fs_find dies on non-dir start"
+assert_dies fn { $find_spec->{run}->(+{ path => "out.txt", pattern => "x" }) }, "fs_find dies on non-dir start"
 val $shallow_spec = Mcpd::Tools::fs_find(+{ root => $jail_dir, max_depth => 1 })
 assert_ok $shallow_spec->{run}->(+{ path => ".", pattern => "deep" }) !~ /deep/, "fs_find honors max_depth"
 unlink "$jail_dir/sub/deep.log"
