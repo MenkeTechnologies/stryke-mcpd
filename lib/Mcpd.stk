@@ -28,7 +28,7 @@ use Mcpd::Tools
 use Mcpd::Client
 
 ## Package version (single source of truth for the umbrella + sublibs).
-fn Mcpd::version { "0.2.0" }
+fn Mcpd::version { "0.3.0" }
 
 ## All sublibrary names, in load order.
 fn Mcpd::modules {

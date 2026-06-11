@@ -31,3 +31,32 @@ fn Mcpd::Client::is_error ($result) {
 fn Mcpd::Client::tool_names ($h) {
     [ sort map { $_->{name} } @{ mcp_tools($h) } ]
 }
+
+## Every text block as a list (unjoined), in envelope order. Empty
+## list when there's no text content. Use when blocks are logically
+## separate (one per row, per file, …) rather than one concatenated body.
+fn Mcpd::Client::texts ($result) {
+    return [] unless ref($result) eq "HASH" && ref($result->{content}) eq "ARRAY"
+    [ map { $_->{text} // "" } grep { ($_->{type} // "") eq "text" } @{ $result->{content} } ]
+}
+
+## The distinct content-block types present in the result, sorted
+## (e.g. ["image","text"]). Empty list for an empty/blockless result.
+fn Mcpd::Client::content_types ($result) {
+    return [] unless ref($result) eq "HASH" && ref($result->{content}) eq "ARRAY"
+    var %seen
+    [ sort grep { !$seen{$_}++ } map { $_->{type} // "" } @{ $result->{content} } ]
+}
+
+## The error text WITHOUT the "ERROR: " prefix, or undef when the
+## result is not an error envelope. Pairs with `is_error`.
+fn Mcpd::Client::error_message ($result) {
+    return undef unless Mcpd::Client::is_error($result)
+    substr(Mcpd::Client::text($result), length("ERROR: "))
+}
+
+## True if a connected server exposes a tool named $name.
+fn Mcpd::Client::has_tool ($h, $name) {
+    val %ok = map { $_ => 1 } @{ Mcpd::Client::tool_names($h) }
+    $ok{$name} ? 1 : 0
+}

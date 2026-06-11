@@ -132,6 +132,16 @@ assert_ok Mcpd::Client::is_error(+{ content => [ +{ type => "text", text => "ERR
                                                    "is_error detects envelope"
 assert_ok !Mcpd::Client::is_error($env),           "is_error passes clean results"
 
+val $multi = +{ content => [ +{ type => "text", text => "a" }, +{ type => "image", url => "x" }, +{ type => "text", text => "b" } ] }
+assert_eq join(",", @{ Mcpd::Client::texts($multi) }), "a,b",   "texts returns unjoined text blocks"
+assert_eq scalar(@{ Mcpd::Client::texts(+{}) }),       0,       "texts empty on missing content"
+assert_eq join(",", @{ Mcpd::Client::content_types($multi) }), "image,text", "content_types distinct + sorted"
+assert_eq scalar(@{ Mcpd::Client::content_types(+{}) }),       0,            "content_types empty on missing content"
+
+val $errenv = +{ content => [ +{ type => "text", text => "ERROR: boom happened" } ] }
+assert_eq Mcpd::Client::error_message($errenv), "boom happened", "error_message strips prefix"
+assert_ok !defined Mcpd::Client::error_message($env), "error_message undef on clean result"
+
 # ── Round trip: serve + connect over stdio ───────────────────────────
 val $srv = "/tmp/mcpd-test-server-$$.stk"
 spurt($srv, q{use Mcpd
@@ -143,6 +153,8 @@ Mcpd::Server::serve("t", [
 })
 val $h = mcp_connect("stdio:stryke $srv")
 assert_eq join(",", @{ Mcpd::Client::tool_names($h) }), "add,kaboom", "round trip lists tools"
+assert_ok  Mcpd::Client::has_tool($h, "add"),     "has_tool finds exposed tool"
+assert_ok !Mcpd::Client::has_tool($h, "nope"),    "has_tool rejects absent tool"
 assert_eq Mcpd::Client::call_text($h, "add", +{ a => 2, b => 40 }), "42", "round trip calls tool"
 assert_ok Mcpd::Client::is_error(mcp_call($h, "kaboom", +{})), "dying tool returns error envelope"
 assert_eq Mcpd::Client::call_text($h, "add", +{ a => 1, b => 1 }), "2", "server survives dying tool"
