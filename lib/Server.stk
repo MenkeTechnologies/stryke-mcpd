@@ -1,0 +1,55 @@
+## lib/Server.stk — `use Mcpd::Server`
+##
+## Validated serving with crash isolation. Two rules of stdio MCP
+## servers, both enforced here:
+##
+##   1. stdout belongs to the protocol — anything else corrupts the
+##      JSON-RPC stream. Diagnostics go to a log file via `log_to`.
+##   2. a dying tool must not kill the server — every run coderef is
+##      wrapped so a die comes back to the client as an ERROR result
+##      instead of an EOF.
+
+package Mcpd::Server
+
+# mysync: shared mutable across closures (stryke captures by value).
+mysync $Mcpd::Server::log_path = undef
+
+## Route server diagnostics to PATH (appended, one line per event).
+## Never log to stdout — it carries the JSON-RPC stream.
+fn Mcpd::Server::log_to ($path) { $Mcpd::Server::log_path = $path }
+
+## Append MSG to the configured log file. No-op when `log_to` was
+## never called. Timestamped, newline-terminated.
+fn Mcpd::Server::log ($msg) {
+    return unless defined $Mcpd::Server::log_path
+    open(my $fh, ">>", $Mcpd::Server::log_path) or return
+    print $fh time() . " $msg\n"
+    close($fh)
+}
+
+## Wrap a run coderef in an error envelope: a die inside the tool
+## returns "ERROR: <message>" to the client; the server keeps serving.
+## Failures are logged when `log_to` is configured.
+fn Mcpd::Server::wrap ($name, $run) {
+    sub {
+        val $r = eval { $run->(@_) }
+        if ($@) {
+            val $e = $@ =~ s/\n+$//r
+            Mcpd::Server::log("tool $name failed: $e")
+            return "ERROR: $e"
+        }
+        $r
+    }
+}
+
+## Validate every spec, wrap every run coderef, then hand the set to
+## `mcp_server_start` and serve the stdio transport. Blocks for the
+## life of the server — call it last.
+fn Mcpd::Server::serve ($name, $tools) {
+    Mcpd::Schema::validate_all($tools)
+    val @wrapped = map {
+        +{ %$_, run => Mcpd::Server::wrap($_->{name}, $_->{run}) }
+    } @$tools
+    Mcpd::Server::log("serving `$name` with " . scalar(@wrapped) . " tools")
+    mcp_server_start($name, +{ tools => [@wrapped] })
+}

@@ -1,0 +1,10 @@
+#!/usr/bin/env stryke
+# examples/stock_server.stk — the stock tool pack jailed to the
+# current directory, served over stdio. Point any MCP client at it:
+#
+#   { "command": "stryke", "args": ["examples/stock_server.stk"] }
+
+use Mcpd
+
+Mcpd::Server::log_to("$ENV{HOME}/.cache/mcpd-stock.log")
+Mcpd::Server::serve("mcpd-stock", Mcpd::Tools::all(+{ root => getcwd() }))

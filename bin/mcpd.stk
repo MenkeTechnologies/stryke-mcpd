@@ -1,0 +1,83 @@
+#!/usr/bin/env stryke
+# bin/mcpd.stk — CLI front-end for the stryke `Mcpd` package.
+#
+# Pure stryke — no helper binary involved.
+#
+# Subcommands:
+#   mcpd new NAME [DIR]      # emit a ready-to-run MCP server skeleton
+#   mcpd serve-stock [ROOT]  # serve the stock tool pack over stdio
+#   mcpd tools               # list the stock tool pack
+#   mcpd version
+#   mcpd help
+
+my @_p = split "/", __FILE__
+pop @_p
+pop @_p
+my $_root = join("/", @_p)
+$_root = "." if $_root eq ""
+require $_root . "/lib/Mcpd.stk"
+
+use Mcpd
+
+fn Mcpd::CLI::usage {
+    p "usage: mcpd <subcommand> [args]"
+    p ""
+    p "  new NAME [DIR]      write DIR/NAME.stk server skeleton (DIR default .)"
+    p "  serve-stock [ROOT]  serve fs_read/fs_list/fs_grep/sh_exec/sys_info over stdio"
+    p "  tools               list the stock tool pack"
+    p "  version             package version"
+}
+
+fn Mcpd::CLI::skeleton ($name) {
+    qq{#!/usr/bin/env stryke
+# $name.stk — MCP server. Run over stdio:   stryke $name.stk
+# Ship as one native binary:                s build --release
+
+use Mcpd
+
+Mcpd::Server::log_to("\$ENV{HOME}/.cache/$name.log")
+
+Mcpd::Server::serve("$name", [
+    Mcpd::Schema::tool("add", "Add two numbers",
+        +{ a => "number", b => "number" },
+        sub { val \$args = shift; \$args->{a} + \$args->{b} }),
+
+    # Stock tools — uncomment what the server should expose:
+    # \@{ Mcpd::Tools::all(+{ root => getcwd() }) },
+])
+}
+}
+
+my @argv = @ARGV
+if (@argv == 0) {
+    Mcpd::CLI::usage()
+    exit 1
+}
+my $sub = shift @argv
+
+if ($sub eq "help" || $sub eq "-h" || $sub eq "--help") {
+    Mcpd::CLI::usage()
+
+} elsif ($sub eq "version") {
+    p Mcpd::version()
+
+} elsif ($sub eq "tools") {
+    p "Mcpd::Tools::$_" for Mcpd::Tools::names()
+
+} elsif ($sub eq "new") {
+    die "mcpd new: missing NAME\n" unless @argv >= 1
+    val $name = $argv[0]
+    die "mcpd new: NAME must be an identifier\n" unless $name =~ /^[A-Za-z_][A-Za-z0-9_-]*$/
+    val $dir  = @argv >= 2 ? $argv[1] : "."
+    val $path = "$dir/$name.stk"
+    die "mcpd new: $path already exists\n" if -e $path
+    spurt($path, Mcpd::CLI::skeleton($name))
+    p $path
+
+} elsif ($sub eq "serve-stock") {
+    val $root = @argv >= 1 ? $argv[0] : getcwd()
+    Mcpd::Server::serve("mcpd-stock", Mcpd::Tools::all(+{ root => $root }))
+
+} else {
+    die "mcpd: unknown subcommand `$sub` (try `mcpd help`)\n"
+}

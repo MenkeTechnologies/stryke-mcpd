@@ -1,0 +1,15 @@
+[package]
+name = "stryke-mcpd"
+version = "0.1.0"
+description = "MCP servers as single native binaries: schema builders, validated serving, a stock tool pack, and result helpers over stryke's mcp_* builtins. No cdylib, no helper binary — just .stk modules loaded on `use Mcpd`."
+authors = ["MenkeTechnologies"]
+license = "MIT"
+repository = "https://github.com/MenkeTechnologies/stryke-mcpd"
+edition = "2026"
+
+# Pure-stryke package — no [ffi] table, no cdylib. Everything lives in
+# lib/*.stk and is resolved by stryke's normal package loader.
+
+[scripts]
+test    = "s test t/"
+install = "s pkg install -g ."

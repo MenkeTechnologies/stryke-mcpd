@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build release tarballs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [[ -n "${{ inputs.tag }}" ]]; then
+              echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+              echo "tag=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Pure-stryke: payload is stryke.toml + lib/ only, matching the canonical
+      # stryke-* tarball layout (see stryke-arrow/aws/docker/duckdb/.../spark).
+      # README, LICENSE, bin/, examples/, t/ are repo-only — they don't ship
+      # in `~/.stryke/store/<pkg>@<ver>/` and shouldn't be in the tarball.
+      - name: Stage release tarballs
+        id: stage
+        # Layout matches what stryke's
+        # `pkg::commands::install_global_from_github` extracts into
+        # `~/.stryke/store/stryke-mcpd@<ver>/`:
+        #
+        #   stryke-mcpd-<tag>-<triple>/
+        #     stryke.toml
+        #     lib/
+        #       Mcpd.stk
+        #       Schema.stk
+        #       Server.stk
+        #       Tools.stk
+        #       Client.stk
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          ARCHIVES=()
+          mkdir -p staging dist
+          stage_one() {
+              local stem="$1"
+              local root="staging/${stem}"
+              mkdir -p "${root}/lib"
+              cp stryke.toml "${root}/"
+              cp lib/*.stk  "${root}/lib/"
+              local archive="dist/${stem}.tar.gz"
+              tar -C staging -czf "${archive}" "${stem}"
+              if command -v sha256sum >/dev/null 2>&1; then
+                  sha256sum "${archive}" | awk '{print $1}' > "${archive}.sha256"
+              else
+                  shasum -a 256 "${archive}" | awk '{print $1}' > "${archive}.sha256"
+              fi
+              ARCHIVES+=("${archive}" "${archive}.sha256")
+          }
+          for TRIPLE in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu \
+                        x86_64-apple-darwin aarch64-apple-darwin; do
+              stage_one "stryke-mcpd-${TAG}-${TRIPLE}"
+          done
+          # Platform-neutral copy for resolvers that don't triple-detect.
+          stage_one "stryke-mcpd-${TAG}"
+          {
+              echo "archives<<EOF"
+              printf '%s\n' "${ARCHIVES[@]}"
+              echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          ls -la dist/
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: ${{ steps.stage.outputs.archives }}
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false

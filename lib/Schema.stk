@@ -1,0 +1,86 @@
+## lib/Schema.stk — `use Mcpd::Schema`
+##
+## Validated tool specs. `mcp_server_start` accepts any
+## +{name, description, parameters, run} hashref and errors one tool
+## at a time at serve time; Schema front-loads that into construction
+## time with named diagnostics, so a malformed spec dies where it was
+## written, not where it was served.
+
+package Mcpd::Schema
+
+## Parameter types the MCP wire format understands.
+fn Mcpd::Schema::types { qw(string number boolean array object) }
+
+## Build a validated tool spec: name (identifier), description
+## (non-empty), \%params (param name → type from `types`), run
+## (coderef taking the args hashref). Dies with the field name on any
+## violation.
+fn Mcpd::Schema::tool ($name, $desc, $params, $run) {
+    unless (defined $name && $name =~ /^[A-Za-z_][A-Za-z0-9_]*$/) {
+        die "Mcpd::Schema::tool: name must be an identifier, got `" . ($name // "undef") . "`"
+    }
+    unless (defined $desc && length($desc) > 0) {
+        die "Mcpd::Schema::tool: `$name` needs a non-empty description"
+    }
+    $params //= +{}
+    unless (ref($params) eq "HASH") {
+        die "Mcpd::Schema::tool: `$name` parameters must be a hashref"
+    }
+    val %ok = map { $_ => 1 } Mcpd::Schema::types()
+    for my $p (sort keys %$params) {
+        unless ($ok{ $params->{$p} }) {
+            die "Mcpd::Schema::tool: `$name` param `$p` has unknown type `$params->{$p}` (use: " . join("/", Mcpd::Schema::types()) . ")"
+        }
+    }
+    unless (ref($run) eq "CODE") {
+        die "Mcpd::Schema::tool: `$name` run must be a coderef"
+    }
+    +{ name => $name, description => $desc, parameters => $params, run => $run }
+}
+
+## Die unless \%args matches the spec's parameters: every declared
+## param present, no undeclared extras, primitives type-checked.
+## Returns 1 on success — designed for the top of a run coderef.
+fn Mcpd::Schema::check_args ($spec, $args) {
+    $args //= +{}
+    val $params = $spec->{parameters}
+    for my $p (sort keys %$params) {
+        unless (exists $args->{$p}) {
+            die "$spec->{name}: missing required param `$p`"
+        }
+        val $t = $params->{$p}
+        val $v = $args->{$p}
+        if ($t eq "number" && !looks_like_number($v)) {
+            die "$spec->{name}: param `$p` must be a number, got `$v`"
+        }
+        if ($t eq "array" && ref($v) ne "ARRAY") {
+            die "$spec->{name}: param `$p` must be an array"
+        }
+        if ($t eq "object" && ref($v) ne "HASH") {
+            die "$spec->{name}: param `$p` must be an object"
+        }
+    }
+    for my $p (sort keys %$args) {
+        unless (exists $params->{$p}) {
+            die "$spec->{name}: unknown param `$p`"
+        }
+    }
+    1
+}
+
+## Die unless every element of \@tools is a well-formed spec with a
+## unique name. Returns the tool count.
+fn Mcpd::Schema::validate_all ($tools) {
+    die "Mcpd::Schema: tools must be an arrayref" unless ref($tools) eq "ARRAY"
+    var %seen
+    for my $t (@$tools) {
+        die "Mcpd::Schema: tool entry is not a hashref" unless ref($t) eq "HASH"
+        for my $k (qw(name description parameters run)) {
+            unless (defined $t->{$k}) {
+                die "Mcpd::Schema: tool `" . ($t->{name} // "?") . "` missing `$k`"
+            }
+        }
+        die "Mcpd::Schema: duplicate tool name `$t->{name}`" if $seen{ $t->{name} }++
+    }
+    scalar @$tools
+}

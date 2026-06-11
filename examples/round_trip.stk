@@ -1,0 +1,22 @@
+#!/usr/bin/env stryke
+# examples/round_trip.stk — connect to calc_server.stk over stdio,
+# list tools, call them, show the error envelope. Runnable anywhere.
+
+use Mcpd
+
+my @_p = split "/", __FILE__
+pop @_p
+my $_dir = join("/", @_p)
+$_dir = "." if $_dir eq ""
+
+val $h = mcp_connect("stdio:stryke $_dir/calc_server.stk")
+
+p "tools: " . join(", ", @{ Mcpd::Client::tool_names($h) })
+p "add(2, 40)        = " . Mcpd::Client::call_text($h, "add", +{ a => 2, b => 40 })
+p "reverse(stryke)   = " . Mcpd::Client::call_text($h, "reverse_text", +{ text => "stryke" })
+
+val $err = mcp_call($h, "always_fails", +{})
+p "error envelope?   = " . (Mcpd::Client::is_error($err) ? "yes" : "no")
+p "server survived?  = " . (Mcpd::Client::call_text($h, "add", +{ a => 1, b => 1 }) eq "2" ? "yes" : "no")
+
+mcp_close($h)

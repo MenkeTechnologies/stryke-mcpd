@@ -1,0 +1,120 @@
+## lib/Tools.stk — `use Mcpd::Tools`
+##
+## The stock tool pack: filesystem read/list/grep, shell exec, and
+## system info as ready-made specs. Every generator takes an opts
+## hashref and returns a spec consumable by `Mcpd::Server::serve` —
+## compose your server from stock + custom tools in one list.
+##
+## Filesystem tools are root-jailed: paths resolve under opts root
+## (default cwd) and escapes (`..`, absolute paths outside root) die —
+## which the Server wrap turns into an ERROR result, not a dead server.
+
+package Mcpd::Tools
+
+## Resolve PATH under ROOT and die if the result escapes it.
+fn Mcpd::Tools::jail ($root, $path) {
+    val $abs = $path =~ m{^/} ? $path : "$root/$path"
+    # Lexical normalize: collapse //, resolve . and .. segments.
+    var @out
+    for my $seg (grep { length $_ && $_ ne "." } split "/", $abs) {
+        if ($seg eq "..") {
+            die "path escapes root: $path" unless @out
+            pop @out
+        } else {
+            push @out, $seg
+        }
+    }
+    val $norm = "/" . join("/", @out)
+    val $jail = $root =~ m{^/} ? $root : "/" . $root
+    unless ($norm eq $jail || index($norm, "$jail/") == 0) {
+        die "path escapes root: $path"
+    }
+    $norm
+}
+
+## fs_read: return a file's contents. opts: root (jail, default cwd).
+fn Mcpd::Tools::fs_read ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_read", "Read a file under $root",
+        +{ path => "string" },
+        sub {
+            val $args = shift
+            slurp Mcpd::Tools::jail($root, $args->{path})
+        })
+}
+
+## fs_list: list a directory. opts: root (jail, default cwd).
+fn Mcpd::Tools::fs_list ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_list", "List a directory under $root",
+        +{ path => "string" },
+        sub {
+            val $args = shift
+            val $dir = Mcpd::Tools::jail($root, $args->{path})
+            opendir(my $dh, $dir) or die "cannot open dir: $dir"
+            val @entries = sort grep { $_ ne "." && $_ ne ".." } readdir($dh)
+            closedir($dh)
+            join("\n", @entries)
+        })
+}
+
+## fs_grep: regex search a file, return matching lines. opts: root.
+fn Mcpd::Tools::fs_grep ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_grep", "Regex-search a file under $root, return matching lines",
+        +{ path => "string", pattern => "string" },
+        sub {
+            val $args = shift
+            val $re   = qr/$args->{pattern}/
+            join("\n", grep { /$re/ } split "\n", slurp(Mcpd::Tools::jail($root, $args->{path})))
+        })
+}
+
+## sh_exec: run a shell command, return its output. opts: allow — an
+## arrayref of permitted command words; omitted means any command.
+fn Mcpd::Tools::sh_exec ($opts = undef) {
+    $opts //= +{}
+    val $allow = $opts->{allow}
+    Mcpd::Schema::tool("sh_exec", "Run a shell command and return its output",
+        +{ command => "string" },
+        sub {
+            val $args = shift
+            val $cmd  = $args->{command}
+            if (defined $allow) {
+                val ($word) = $cmd =~ /^\s*(\S+)/
+                val %ok = map { $_ => 1 } @$allow
+                die "command `" . ($word // "") . "` not in allowlist" unless $ok{ $word // "" }
+            }
+            scalar qx($cmd)
+        })
+}
+
+## sys_info: report platform basics — no params.
+fn Mcpd::Tools::sys_info {
+    Mcpd::Schema::tool("sys_info", "Report hostname, OS, and stryke version",
+        +{},
+        sub {
+            "host: "   . (hostname_str() // "?") . "\n" .
+            "os: $^O\n" .
+            "pid: $$\n" .
+            "cwd: " . getcwd()
+        })
+}
+
+## The full stock pack as one list. opts forwarded to each generator.
+fn Mcpd::Tools::all ($opts = undef) {
+    $opts //= +{}
+    [
+        Mcpd::Tools::fs_read($opts),
+        Mcpd::Tools::fs_list($opts),
+        Mcpd::Tools::fs_grep($opts),
+        Mcpd::Tools::sh_exec($opts),
+        Mcpd::Tools::sys_info(),
+    ]
+}
+
+## All stock tool names this sublib ships.
+fn Mcpd::Tools::names { qw(fs_read fs_list fs_grep sh_exec sys_info) }

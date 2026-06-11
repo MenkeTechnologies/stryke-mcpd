@@ -1,0 +1,92 @@
+## t/test_mcpd.stk — assertion tests for the stryke-mcpd package.
+##
+## Headless-CI safe: the round trip serves a generated server script
+## over stdio on this same machine — no network, no external MCP
+## server. Schema / Tools / Client helpers are asserted as pure fns.
+
+use Mcpd
+
+# ── version / modules ────────────────────────────────────────────────
+assert_match qr/^\d+\.\d+\.\d+$/, Mcpd::version(), "Mcpd::version is semver"
+assert_eq scalar(Mcpd::modules()), 4, "Mcpd::modules lists four sublibs"
+
+# ── Schema::tool ─────────────────────────────────────────────────────
+val $spec = Mcpd::Schema::tool("add", "Add", +{ a => "number", b => "number" }, sub { 1 })
+assert_eq $spec->{name}, "add",                    "tool spec keeps name"
+assert_eq ref($spec->{run}), "CODE",               "tool spec keeps run coderef"
+assert_eq scalar(Mcpd::Schema::types()), 5,        "five wire types"
+assert_dies sub { Mcpd::Schema::tool("9bad", "d", +{}, sub { 1 }) },        "tool rejects non-identifier name"
+assert_dies sub { Mcpd::Schema::tool("x", "", +{}, sub { 1 }) },            "tool rejects empty description"
+assert_dies sub { Mcpd::Schema::tool("x", "d", +{ a => "float" }, sub { 1 }) }, "tool rejects unknown param type"
+assert_dies sub { Mcpd::Schema::tool("x", "d", +{}, "not-code") },          "tool rejects non-coderef run"
+
+# ── Schema::check_args ───────────────────────────────────────────────
+assert_eq Mcpd::Schema::check_args($spec, +{ a => 1, b => 2 }), 1, "check_args accepts full args"
+assert_dies sub { Mcpd::Schema::check_args($spec, +{ a => 1 }) },             "check_args rejects missing param"
+assert_dies sub { Mcpd::Schema::check_args($spec, +{ a => 1, b => "x" }) },   "check_args rejects non-number"
+assert_dies sub { Mcpd::Schema::check_args($spec, +{ a => 1, b => 2, c => 3 }) }, "check_args rejects extras"
+
+# ── Schema::validate_all ─────────────────────────────────────────────
+assert_eq Mcpd::Schema::validate_all([$spec]), 1, "validate_all counts tools"
+assert_dies sub { Mcpd::Schema::validate_all("x") },        "validate_all rejects non-arrayref"
+assert_dies sub { Mcpd::Schema::validate_all([$spec, $spec]) }, "validate_all rejects duplicate names"
+assert_dies sub { Mcpd::Schema::validate_all([+{ name => "x" }]) }, "validate_all rejects partial spec"
+
+# ── Server::wrap error envelope ──────────────────────────────────────
+val $ok_run  = Mcpd::Server::wrap("t1", sub { "fine" })
+val $bad_run = Mcpd::Server::wrap("t2", sub { die "boom" })
+assert_eq $ok_run->(),  "fine",          "wrap passes results through"
+assert_match qr/^ERROR: boom/, $bad_run->(), "wrap converts die to ERROR envelope"
+
+# ── Server::log_to file logging ──────────────────────────────────────
+val $logf = "/tmp/mcpd-test-$$.log"
+Mcpd::Server::log_to($logf)
+Mcpd::Server::log("hello-log")
+assert_match qr/hello-log/, slurp($logf), "log appends to configured file"
+unlink $logf
+
+# ── Tools::jail ──────────────────────────────────────────────────────
+assert_eq Mcpd::Tools::jail("/srv/data", "a/b.txt"),    "/srv/data/a/b.txt", "jail resolves relative"
+assert_eq Mcpd::Tools::jail("/srv/data", "a/../b.txt"), "/srv/data/b.txt",   "jail collapses dotdot inside"
+assert_dies sub { Mcpd::Tools::jail("/srv/data", "../../etc/passwd") }, "jail blocks dotdot escape"
+assert_dies sub { Mcpd::Tools::jail("/srv/data", "/etc/passwd") },      "jail blocks absolute escape"
+
+# ── Tools specs are well-formed ──────────────────────────────────────
+val $pack = Mcpd::Tools::all(+{ root => "/tmp" })
+assert_eq Mcpd::Schema::validate_all($pack), 5,    "stock pack is 5 valid tools"
+assert_eq scalar(Mcpd::Tools::names()), 5,         "stock roster pinned at 5"
+val $read_spec = Mcpd::Tools::fs_read(+{ root => "/tmp" })
+val $tmp_file = "/tmp/mcpd-fsread-$$.txt"
+spurt($tmp_file, "jail-read-ok")
+assert_eq $read_spec->{run}->(+{ path => "mcpd-fsread-$$.txt" }), "jail-read-ok", "fs_read reads inside jail"
+unlink $tmp_file
+val $exec_spec = Mcpd::Tools::sh_exec(+{ allow => ["echo"] })
+assert_match qr/allowed/, $exec_spec->{run}->(+{ command => "echo allowed" }), "sh_exec runs allowlisted command"
+assert_dies sub { $exec_spec->{run}->(+{ command => "rm -rf /" }) }, "sh_exec blocks non-allowlisted command"
+
+# ── Client envelope helpers (pure) ───────────────────────────────────
+val $env = +{ content => [ +{ type => "text", text => "4" }, +{ type => "text", text => "2" } ] }
+assert_eq Mcpd::Client::text($env), "42",          "text joins text blocks"
+assert_eq Mcpd::Client::text(+{}), "",             "text empty on missing content"
+assert_ok Mcpd::Client::is_error(+{ content => [ +{ type => "text", text => "ERROR: x" } ] }),
+                                                   "is_error detects envelope"
+assert_ok !Mcpd::Client::is_error($env),           "is_error passes clean results"
+
+# ── Round trip: serve + connect over stdio ───────────────────────────
+val $srv = "/tmp/mcpd-test-server-$$.stk"
+spurt($srv, q{use Mcpd
+Mcpd::Server::serve("t", [
+    Mcpd::Schema::tool("add", "Add", +{ a => "number", b => "number" },
+        sub { val $a = shift; $a->{a} + $a->{b} }),
+    Mcpd::Schema::tool("kaboom", "Dies", +{}, sub { die "kaboom" }),
+])
+})
+val $h = mcp_connect("stdio:stryke $srv")
+assert_eq join(",", @{ Mcpd::Client::tool_names($h) }), "add,kaboom", "round trip lists tools"
+assert_eq Mcpd::Client::call_text($h, "add", +{ a => 2, b => 40 }), "42", "round trip calls tool"
+assert_ok Mcpd::Client::is_error(mcp_call($h, "kaboom", +{})), "dying tool returns error envelope"
+assert_eq Mcpd::Client::call_text($h, "add", +{ a => 1, b => 1 }), "2", "server survives dying tool"
+mcp_close($h)
+unlink $srv
+
+test_run

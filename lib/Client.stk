@@ -1,0 +1,33 @@
+## lib/Client.stk — `use Mcpd::Client`
+##
+## Result-envelope helpers for the client side. `mcp_connect`,
+## `mcp_tools`, `mcp_call`, `mcp_close` are stryke builtins — none
+## re-wrapped here. What this sublib adds is the part everyone writes
+## by hand: unpacking the MCP result envelope
+## (`+{content => [+{type => "text", text => ...}, ...]}`) and the
+## call-then-unpack composite that round-trip tests live on.
+
+package Mcpd::Client
+
+## Extract and join the text blocks from an MCP call result. Returns
+## "" for results with no text content.
+fn Mcpd::Client::text ($result) {
+    return "" unless ref($result) eq "HASH" && ref($result->{content}) eq "ARRAY"
+    join("", map { $_->{text} // "" } grep { ($_->{type} // "") eq "text" } @{ $result->{content} })
+}
+
+## `mcp_call` + `text` in one step — the round-trip primitive.
+fn Mcpd::Client::call_text ($h, $name, $args) {
+    Mcpd::Client::text(mcp_call($h, $name, $args // +{}))
+}
+
+## True when the result is an Mcpd error envelope (a tool that died
+## behind `Mcpd::Server::wrap`).
+fn Mcpd::Client::is_error ($result) {
+    index(Mcpd::Client::text($result), "ERROR: ") == 0 ? 1 : 0
+}
+
+## Tool names a connected server exposes, sorted.
+fn Mcpd::Client::tool_names ($h) {
+    [ sort map { $_->{name} } @{ mcp_tools($h) } ]
+}

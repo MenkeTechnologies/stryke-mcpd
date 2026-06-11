@@ -1,0 +1,36 @@
+## lib/Mcpd.stk — `use Mcpd` umbrella for stryke-mcpd.
+##
+## Pure-stryke package. MCP (Model Context Protocol) servers with
+## Perl-grade ergonomics and Go-grade artifacts: write a tool in a few
+## lines, `s build --release` the script, ship one static native
+## binary — no Node runtime, no Python venv, no interpreter on the
+## target machine.
+##
+##   use Mcpd
+##   Mcpd::Server::serve("calc", [
+##       Mcpd::Schema::tool("add", "Add two numbers",
+##           +{ a => "number", b => "number" },
+##           sub { val $a = shift; $a->{a} + $a->{b} }),
+##   ])
+##
+## The protocol plumbing (`mcp_server_start`, `mcp_connect`,
+## `mcp_call`, `mcp_serve_registered_tools`, the `tool fn` /
+## `mcp_server` desugar) is strykelang core — this package is the
+## policy layer: validated tool specs, error envelopes that keep a
+## dying tool from killing the server, a stock tool pack, and result
+## extraction for round-trip tests.
+
+package Mcpd
+
+use Mcpd::Schema
+use Mcpd::Server
+use Mcpd::Tools
+use Mcpd::Client
+
+## Package version (single source of truth for the umbrella + sublibs).
+fn Mcpd::version { "0.1.0" }
+
+## All sublibrary names, in load order.
+fn Mcpd::modules {
+    qw(Mcpd::Schema Mcpd::Server Mcpd::Tools Mcpd::Client)
+}
