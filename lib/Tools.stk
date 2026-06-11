@@ -13,6 +13,8 @@
 
 package Mcpd::Tools
 
+use Mcpd::Schema
+
 ## Resolve PATH under ROOT and die if the result escapes it.
 fn Mcpd::Tools::jail ($root, $path) {
     val $abs = $path =~ m{^/} ? $path : "$root/$path"
