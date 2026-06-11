@@ -84,3 +84,32 @@ fn Mcpd::Schema::validate_all ($tools) {
     }
     scalar @$tools
 }
+
+## Sorted parameter names of a spec. param_names($spec) → ["a","b"].
+fn Mcpd::Schema::param_names ($spec) {
+    [ sort keys %{ $spec->{parameters} // +{} } ]
+}
+
+## One-line signature: "name(a:number, b:string) — description". The
+## human-readable form for a tool catalog or a log line.
+fn Mcpd::Schema::tool_summary ($spec) {
+    val $params = $spec->{parameters} // +{}
+    val @sig = map { "$_:$params->{$_}" } sort keys %$params
+    "$spec->{name}(" . join(", ", @sig) . ") - $spec->{description}"
+}
+
+## Render a whole tool set as a catalog — one `tool_summary` per line,
+## in roster order. Validates the set first so a malformed spec fails
+## here rather than at serve time.
+fn Mcpd::Schema::describe ($tools) {
+    Mcpd::Schema::validate_all($tools)
+    join "\n", map { Mcpd::Schema::tool_summary($_) } @$tools
+}
+
+## A copy of $spec under a new name, re-validated. The other fields
+## (description, parameters, run) are preserved. Uses the parenthesized
+## list-splat idiom — `+{ %$spec, name => ... }` drops the spread keys
+## (strykelang BUG-305).
+fn Mcpd::Schema::rename ($spec, $new_name) {
+    Mcpd::Schema::tool($new_name, $spec->{description}, $spec->{parameters}, $spec->{run})
+}

@@ -32,6 +32,22 @@ assert_dies fn { Mcpd::Schema::validate_all("x") },        "validate_all rejects
 assert_dies fn { Mcpd::Schema::validate_all([$spec, $spec]) }, "validate_all rejects duplicate names"
 assert_dies fn { Mcpd::Schema::validate_all([+{ name => "x" }]) }, "validate_all rejects partial spec"
 
+# ── Schema::param_names / tool_summary / describe / rename ───────────
+val $sp2 = Mcpd::Schema::tool("add", "Add two numbers", +{ b => "number", a => "number" }, fn { 1 })
+assert_eq join(",", @{ Mcpd::Schema::param_names($sp2) }), "a,b", "param_names sorted"
+assert_eq scalar(@{ Mcpd::Schema::param_names(Mcpd::Schema::tool("nop", "d", +{}, fn { 1 })) }), 0, "param_names empty"
+assert_eq Mcpd::Schema::tool_summary($sp2), "add(a:number, b:number) - Add two numbers", "tool_summary signature"
+val $cat = Mcpd::Schema::describe([$sp2, Mcpd::Schema::tool("ping", "Ping", +{}, fn { 1 })])
+assert_match qr/add\(a:number, b:number\) - Add two numbers/, $cat, "describe lists first tool"
+assert_match qr/ping\(\) - Ping/,                            $cat, "describe lists second tool"
+assert_dies fn { Mcpd::Schema::describe("nope") }, "describe validates the set"
+val $rn = Mcpd::Schema::rename($sp2, "plus")
+assert_eq $rn->{name},        "plus",            "rename swaps name"
+assert_eq $rn->{description},  "Add two numbers", "rename preserves description"
+assert_eq ref($rn->{run}),    "CODE",            "rename preserves run coderef"
+assert_eq join(",", @{ Mcpd::Schema::param_names($rn) }), "a,b", "rename preserves parameters"
+assert_dies fn { Mcpd::Schema::rename($sp2, "9bad") }, "rename re-validates the new name"
+
 # ── Server::wrap error envelope ──────────────────────────────────────
 val $ok_run  = Mcpd::Server::wrap("t1", fn { "fine" })
 val $bad_run = Mcpd::Server::wrap("t2", fn { die "boom" })
@@ -43,6 +59,24 @@ val $logf = "/tmp/mcpd-test-$$.log"
 Mcpd::Server::log_to($logf)
 Mcpd::Server::log("hello-log")
 assert_match qr/hello-log/, slurp($logf), "log appends to configured file"
+assert_eq Mcpd::Server::log_path(), $logf, "log_path returns configured path"
+
+# ── Server::wrap_all (pins BUG-305 spread fix) ───────────────────────
+val $raw = [ Mcpd::Schema::tool("ok", "Fine", +{ x => "number" }, fn { "fine" }),
+             Mcpd::Schema::tool("boom", "Dies", +{}, fn { die "kab" }) ]
+val $wa = Mcpd::Server::wrap_all($raw)
+assert_eq scalar(@$wa), 2,             "wrap_all returns one spec per tool"
+assert_eq $wa->[0]{name}, "ok",        "wrap_all preserves name"
+assert_eq $wa->[0]{description}, "Fine","wrap_all preserves description"
+assert_eq join(",", @{ Mcpd::Schema::param_names($wa->[0]) }), "x", "wrap_all preserves parameters"
+assert_eq $wa->[0]{run}->(),  "fine",  "wrap_all run passes through"
+assert_match qr/^ERROR: kab/, $wa->[1]{run}->(), "wrap_all wraps the dying tool"
+
+# ── Server::audit logs successful calls ──────────────────────────────
+Mcpd::Server::log("hello-log")  # ensure path still set
+val $aud = Mcpd::Server::audit("calc", fn { "1234" })
+assert_eq $aud->(), "1234",            "audit passes result through"
+assert_match qr/tool calc ok: 4 bytes/, slurp($logf), "audit logs success with byte count"
 unlink $logf
 
 # ── Tools::jail ──────────────────────────────────────────────────────

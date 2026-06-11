@@ -47,9 +47,42 @@ fn Mcpd::Server::wrap ($name, $run) {
 ## life of the server — call it last.
 fn Mcpd::Server::serve ($name, $tools) {
     Mcpd::Schema::validate_all($tools)
-    val @wrapped = map {
-        +{ %$_, run => Mcpd::Server::wrap($_->{name}, $_->{run}) }
-    } @$tools
-    Mcpd::Server::log("serving `$name` with " . scalar(@wrapped) . " tools")
-    mcp_server_start($name, +{ tools => [@wrapped] })
+    val $wrapped = Mcpd::Server::wrap_all($tools)
+    Mcpd::Server::log("serving `$name` with " . scalar(@$wrapped) . " tools")
+    mcp_server_start($name, +{ tools => $wrapped })
+}
+
+## The configured log path, or undef when `log_to` was never called.
+fn Mcpd::Server::log_path { $Mcpd::Server::log_path }
+
+## Return a copy of \@tools with every run coderef wrapped in the
+## error envelope; the spec metadata (name, description, parameters)
+## is preserved. Pure: builds new specs, never serves.
+## NB the four spec keys are listed explicitly rather than splatting
+## the source hash — both `+{ %$t, run => ... }` and the
+## list-assignment `(%$t, run => ...)` drop keys on a Schema::tool spec
+## (strykelang BUG-305).
+fn Mcpd::Server::wrap_all ($tools) {
+    var @out
+    for val $t (@$tools) {
+        push @out, +{
+            name        => $t->{name},
+            description => $t->{description},
+            parameters  => $t->{parameters},
+            run         => Mcpd::Server::wrap($t->{name}, $t->{run}),
+        }
+    }
+    \@out
+}
+
+## Wrap a run coderef so successful calls are logged too (an audit
+## trail), in addition to the error envelope `wrap` provides. The log
+## line records the tool name and the result's length.
+fn Mcpd::Server::audit ($name, $run) {
+    val $wrapped = Mcpd::Server::wrap($name, $run)
+    fn {
+        val $r = $wrapped->(@_)
+        Mcpd::Server::log("tool $name ok: " . length("$r") . " bytes")
+        $r
+    }
 }
