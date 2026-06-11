@@ -31,7 +31,7 @@ fn Mcpd::Server::log ($msg) {
 ## returns "ERROR: <message>" to the client; the server keeps serving.
 ## Failures are logged when `log_to` is configured.
 fn Mcpd::Server::wrap ($name, $run) {
-    sub {
+    fn {
         val $r = eval { $run->(@_) }
         if ($@) {
             val $e = $@ =~ s/\n+$//r

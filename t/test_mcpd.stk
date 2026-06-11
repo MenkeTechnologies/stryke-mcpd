@@ -11,30 +11,30 @@ assert_match qr/^\d+\.\d+\.\d+$/, Mcpd::version(), "Mcpd::version is semver"
 assert_eq scalar(Mcpd::modules()), 4, "Mcpd::modules lists four sublibs"
 
 # ── Schema::tool ─────────────────────────────────────────────────────
-val $spec = Mcpd::Schema::tool("add", "Add", +{ a => "number", b => "number" }, sub { 1 })
+val $spec = Mcpd::Schema::tool("add", "Add", +{ a => "number", b => "number" }, fn { 1 })
 assert_eq $spec->{name}, "add",                    "tool spec keeps name"
 assert_eq ref($spec->{run}), "CODE",               "tool spec keeps run coderef"
 assert_eq scalar(Mcpd::Schema::types()), 5,        "five wire types"
-assert_dies sub { Mcpd::Schema::tool("9bad", "d", +{}, sub { 1 }) },        "tool rejects non-identifier name"
-assert_dies sub { Mcpd::Schema::tool("x", "", +{}, sub { 1 }) },            "tool rejects empty description"
-assert_dies sub { Mcpd::Schema::tool("x", "d", +{ a => "float" }, sub { 1 }) }, "tool rejects unknown param type"
-assert_dies sub { Mcpd::Schema::tool("x", "d", +{}, "not-code") },          "tool rejects non-coderef run"
+assert_dies fn { Mcpd::Schema::tool("9bad", "d", +{}, fn { 1 }) },        "tool rejects non-identifier name"
+assert_dies fn { Mcpd::Schema::tool("x", "", +{}, fn { 1 }) },            "tool rejects empty description"
+assert_dies fn { Mcpd::Schema::tool("x", "d", +{ a => "float" }, fn { 1 }) }, "tool rejects unknown param type"
+assert_dies fn { Mcpd::Schema::tool("x", "d", +{}, "not-code") },          "tool rejects non-coderef run"
 
 # ── Schema::check_args ───────────────────────────────────────────────
 assert_eq Mcpd::Schema::check_args($spec, +{ a => 1, b => 2 }), 1, "check_args accepts full args"
-assert_dies sub { Mcpd::Schema::check_args($spec, +{ a => 1 }) },             "check_args rejects missing param"
-assert_dies sub { Mcpd::Schema::check_args($spec, +{ a => 1, b => "x" }) },   "check_args rejects non-number"
-assert_dies sub { Mcpd::Schema::check_args($spec, +{ a => 1, b => 2, c => 3 }) }, "check_args rejects extras"
+assert_dies fn { Mcpd::Schema::check_args($spec, +{ a => 1 }) },             "check_args rejects missing param"
+assert_dies fn { Mcpd::Schema::check_args($spec, +{ a => 1, b => "x" }) },   "check_args rejects non-number"
+assert_dies fn { Mcpd::Schema::check_args($spec, +{ a => 1, b => 2, c => 3 }) }, "check_args rejects extras"
 
 # ── Schema::validate_all ─────────────────────────────────────────────
 assert_eq Mcpd::Schema::validate_all([$spec]), 1, "validate_all counts tools"
-assert_dies sub { Mcpd::Schema::validate_all("x") },        "validate_all rejects non-arrayref"
-assert_dies sub { Mcpd::Schema::validate_all([$spec, $spec]) }, "validate_all rejects duplicate names"
-assert_dies sub { Mcpd::Schema::validate_all([+{ name => "x" }]) }, "validate_all rejects partial spec"
+assert_dies fn { Mcpd::Schema::validate_all("x") },        "validate_all rejects non-arrayref"
+assert_dies fn { Mcpd::Schema::validate_all([$spec, $spec]) }, "validate_all rejects duplicate names"
+assert_dies fn { Mcpd::Schema::validate_all([+{ name => "x" }]) }, "validate_all rejects partial spec"
 
 # ── Server::wrap error envelope ──────────────────────────────────────
-val $ok_run  = Mcpd::Server::wrap("t1", sub { "fine" })
-val $bad_run = Mcpd::Server::wrap("t2", sub { die "boom" })
+val $ok_run  = Mcpd::Server::wrap("t1", fn { "fine" })
+val $bad_run = Mcpd::Server::wrap("t2", fn { die "boom" })
 assert_eq $ok_run->(),  "fine",          "wrap passes results through"
 assert_match qr/^ERROR: boom/, $bad_run->(), "wrap converts die to ERROR envelope"
 
@@ -48,8 +48,8 @@ unlink $logf
 # ── Tools::jail ──────────────────────────────────────────────────────
 assert_eq Mcpd::Tools::jail("/srv/data", "a/b.txt"),    "/srv/data/a/b.txt", "jail resolves relative"
 assert_eq Mcpd::Tools::jail("/srv/data", "a/../b.txt"), "/srv/data/b.txt",   "jail collapses dotdot inside"
-assert_dies sub { Mcpd::Tools::jail("/srv/data", "../../etc/passwd") }, "jail blocks dotdot escape"
-assert_dies sub { Mcpd::Tools::jail("/srv/data", "/etc/passwd") },      "jail blocks absolute escape"
+assert_dies fn { Mcpd::Tools::jail("/srv/data", "../../etc/passwd") }, "jail blocks dotdot escape"
+assert_dies fn { Mcpd::Tools::jail("/srv/data", "/etc/passwd") },      "jail blocks absolute escape"
 
 # ── Tools specs are well-formed ──────────────────────────────────────
 val $pack = Mcpd::Tools::all(+{ root => "/tmp" })
@@ -69,7 +69,7 @@ assert_eq $read_spec->{run}->(+{ path => "mcpd-fsread-$$.txt" }), "jail-read-ok"
 unlink $tmp_file
 val $exec_spec = Mcpd::Tools::sh_exec(+{ allow => ["echo"] })
 assert_match qr/allowed/, $exec_spec->{run}->(+{ command => "echo allowed" }), "sh_exec runs allowlisted command"
-assert_dies sub { $exec_spec->{run}->(+{ command => "rm -rf /" }) }, "sh_exec blocks non-allowlisted command"
+assert_dies fn { $exec_spec->{run}->(+{ command => "rm -rf /" }) }, "sh_exec blocks non-allowlisted command"
 
 # ── Tools: fs_list run path (pins the glob-not-opendir fix) ──────────
 val $list_dir = "/tmp/mcpd-list-$$"
@@ -137,8 +137,8 @@ val $srv = "/tmp/mcpd-test-server-$$.stk"
 spurt($srv, q{use Mcpd
 Mcpd::Server::serve("t", [
     Mcpd::Schema::tool("add", "Add", +{ a => "number", b => "number" },
-        sub { val $a = shift; $a->{a} + $a->{b} }),
-    Mcpd::Schema::tool("kaboom", "Dies", +{}, sub { die "kaboom" }),
+        fn { val $a = shift; $a->{a} + $a->{b} }),
+    Mcpd::Schema::tool("kaboom", "Dies", +{}, fn { die "kaboom" }),
 ])
 })
 val $h = mcp_connect("stdio:stryke $srv")

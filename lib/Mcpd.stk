@@ -10,7 +10,7 @@
 ##   Mcpd::Server::serve("calc", [
 ##       Mcpd::Schema::tool("add", "Add two numbers",
 ##           +{ a => "number", b => "number" },
-##           sub { val $a = shift; $a->{a} + $a->{b} }),
+##           fn { val $a = shift; $a->{a} + $a->{b} }),
 ##   ])
 ##
 ## The protocol plumbing (`mcp_server_start`, `mcp_connect`,

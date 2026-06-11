@@ -40,7 +40,7 @@ Mcpd::Server::log_to("\$ENV{HOME}/.cache/$name.log")
 Mcpd::Server::serve("$name", [
     Mcpd::Schema::tool("add", "Add two numbers",
         +{ a => "number", b => "number" },
-        sub { val \$args = shift; \$args->{a} + \$args->{b} }),
+        fn { val \$args = shift; \$args->{a} + \$args->{b} }),
 
     # Stock tools — uncomment what the server should expose:
     # \@{ Mcpd::Tools::all(+{ root => getcwd() }) },

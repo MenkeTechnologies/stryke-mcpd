@@ -40,7 +40,7 @@ fn Mcpd::Tools::fs_read ($opts = undef) {
     val $root = $opts->{root} // getcwd()
     Mcpd::Schema::tool("fs_read", "Read a file under $root",
         +{ path => "string" },
-        sub {
+        fn {
             val $args = shift
             slurp Mcpd::Tools::jail($root, $args->{path})
         })
@@ -52,7 +52,7 @@ fn Mcpd::Tools::fs_list ($opts = undef) {
     val $root = $opts->{root} // getcwd()
     Mcpd::Schema::tool("fs_list", "List a directory under $root",
         +{ path => "string" },
-        sub {
+        fn {
             val $args = shift
             val $dir = Mcpd::Tools::jail($root, $args->{path})
             die "cannot open dir: $dir" unless -d $dir
@@ -72,7 +72,7 @@ fn Mcpd::Tools::fs_grep ($opts = undef) {
     val $root = $opts->{root} // getcwd()
     Mcpd::Schema::tool("fs_grep", "Regex-search a file under $root, return matching lines",
         +{ path => "string", pattern => "string" },
-        sub {
+        fn {
             val $args = shift
             # No qr// here: a qr object built from a hashref-derived
             # string inside a closure mismatches (strykelang bug, see
@@ -158,7 +158,7 @@ fn Mcpd::Tools::sh_exec ($opts = undef) {
     val $allow = $opts->{allow}
     Mcpd::Schema::tool("sh_exec", "Run a shell command and return its output",
         +{ command => "string" },
-        sub {
+        fn {
             val $args = shift
             val $cmd  = $args->{command}
             if (defined $allow) {
@@ -174,7 +174,7 @@ fn Mcpd::Tools::sh_exec ($opts = undef) {
 fn Mcpd::Tools::sys_info {
     Mcpd::Schema::tool("sys_info", "Report hostname, OS, and stryke version",
         +{},
-        sub {
+        fn {
             "host: "   . (hostname_str() // "?") . "\n" .
             "os: $^O\n" .
             "pid: $$\n" .

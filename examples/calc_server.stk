@@ -10,13 +10,13 @@ use Mcpd
 Mcpd::Server::serve("calc", [
     Mcpd::Schema::tool("add", "Add two numbers",
         +{ a => "number", b => "number" },
-        sub { val $args = shift; $args->{a} + $args->{b} }),
+        fn { val $args = shift; $args->{a} + $args->{b} }),
 
     Mcpd::Schema::tool("reverse_text", "Reverse a string",
         +{ text => "string" },
-        sub { val $args = shift; join("", reverse split "", $args->{text}) }),
+        fn { val $args = shift; join("", reverse split "", $args->{text}) }),
 
     Mcpd::Schema::tool("always_fails", "Demonstrates the error envelope",
         +{},
-        sub { die "intentional failure" }),
+        fn { die "intentional failure" }),
 ])
