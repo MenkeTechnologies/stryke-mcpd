@@ -154,7 +154,8 @@ stryke-mcpd/
 ├── examples/
 │   ├── calc_server.stk        # minimal server (the round-trip target shape)
 │   ├── round_trip.stk         # client: list, call, error envelope, survival
-│   └── stock_server.stk       # stock pack jailed to cwd
+│   ├── stock_server.stk       # stock pack jailed to cwd
+│   └── jailed_fs.stk          # live write/read + a blocked jail escape over stdio
 ├── tests/                     # shell gate scripts (CI lints)
 └── docs/                      # GitHub Pages site
 ```

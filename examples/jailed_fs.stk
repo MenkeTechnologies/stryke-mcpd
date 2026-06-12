@@ -1,0 +1,38 @@
+#!/usr/bin/env stryke
+# examples/jailed_fs.stk — spin up the stock tool pack jailed to a temp
+# directory, then drive it over a real stdio round trip: write a file,
+# read it back, and watch a path-escape come back as an error envelope.
+# Self-contained and runnable anywhere. The same flow is pinned in
+# t/test_mcpd.stk under "Integration".
+#
+# Run:   s examples/jailed_fs.stk
+
+use Mcpd
+
+val $jail = "/tmp/mcpd-jailed-demo-$$"
+mkdir $jail
+$ENV{MCPD_JAIL} = $jail
+
+val $srv = "/tmp/mcpd-jailed-server-$$.stk"
+spurt($srv, q{use Mcpd
+Mcpd::Server::serve("jailed", Mcpd::Tools::all(+{ root => $ENV{MCPD_JAIL} }))
+})
+
+val $h = mcp_connect("stdio:stryke $srv")
+p "tools served : " . scalar(@{ Mcpd::Client::tool_names($h) }) . " (jailed to $jail)"
+p ""
+
+p "write note.txt : " . Mcpd::Client::call_text($h, "fs_write", +{ path => "note.txt", content => "hello from inside the jail" })
+p "read  note.txt : " . Mcpd::Client::call_text($h, "fs_read",  +{ path => "note.txt" })
+p "list  .        : " . Mcpd::Client::call_text($h, "fs_list",  +{ path => "." })
+p ""
+
+val $esc = mcp_call($h, "fs_read", +{ path => "../../etc/passwd" })
+p "escape attempt : " . (Mcpd::Client::is_error($esc)
+    ? "blocked — " . Mcpd::Client::error_message($esc)
+    : "LEAKED (bug!)")
+
+mcp_close($h)
+unlink "$jail/note.txt"
+rmdir $jail
+unlink $srv

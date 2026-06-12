@@ -53,6 +53,9 @@ val $ok_run  = Mcpd::Server::wrap("t1", fn { "fine" })
 val $bad_run = Mcpd::Server::wrap("t2", fn { die "boom" })
 assert_eq $ok_run->(),  "fine",          "wrap passes results through"
 assert_match qr/^ERROR: boom/, $bad_run->(), "wrap converts die to ERROR envelope"
+# the stryke die location (" at FILE line N.") is stripped from the envelope
+val $loc_run = Mcpd::Server::wrap("t3", fn { die "bad thing happened" })
+assert_eq $loc_run->(), "ERROR: bad thing happened", "wrap strips the die location suffix"
 
 # ── Server::log_to file logging ──────────────────────────────────────
 val $logf = "/tmp/mcpd-test-$$.log"
@@ -194,5 +197,40 @@ assert_ok Mcpd::Client::is_error(mcp_call($h, "kaboom", +{})), "dying tool retur
 assert_eq Mcpd::Client::call_text($h, "add", +{ a => 1, b => 1 }), "2", "server survives dying tool"
 mcp_close($h)
 unlink $srv
+
+# ── Integration: stock pack + custom tool served live over stdio ─────
+# The stock fs tools are unit-tested as specs above (run coderefs called
+# directly); this drives them through a real mcp_connect round trip and
+# proves the jail holds over the wire.
+val $jail = "/tmp/mcpd-int-$$"
+mkdir $jail
+$ENV{MCPD_JAIL} = $jail
+val $isrv = "/tmp/mcpd-int-server-$$.stk"
+spurt($isrv, q{use Mcpd
+val $root = $ENV{MCPD_JAIL}
+Mcpd::Server::serve("stockint", [
+    @{ Mcpd::Tools::all(+{ root => $root }) },
+    Mcpd::Schema::tool("greet", "Greet someone", +{ who => "string" },
+        fn { val $a = shift; "hi " . $a->{who} }),
+])
+})
+val $ih = mcp_connect("stdio:stryke $isrv")
+assert_ok Mcpd::Client::has_tool($ih, "fs_write"),  "integration: stock fs_write exposed live"
+assert_ok Mcpd::Client::has_tool($ih, "fs_read"),   "integration: stock fs_read exposed live"
+assert_ok Mcpd::Client::has_tool($ih, "greet"),     "integration: custom tool composed with stock pack"
+assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 9, "integration: 8 stock + 1 custom tool"
+# write then read back through the live jailed server
+Mcpd::Client::call_text($ih, "fs_write", +{ path => "note.txt", content => "live-jailed" })
+assert_eq slurp("$jail/note.txt"), "live-jailed", "integration: fs_write landed inside the jail"
+assert_eq Mcpd::Client::call_text($ih, "fs_read", +{ path => "note.txt" }), "live-jailed", "integration: fs_read round-trips over the wire"
+assert_eq Mcpd::Client::call_text($ih, "greet", +{ who => "stryke" }), "hi stryke", "integration: custom tool runs over the wire"
+# a jail escape comes back as an error envelope, unwrapped by error_message
+val $esc = mcp_call($ih, "fs_read", +{ path => "../../etc/passwd" })
+assert_ok Mcpd::Client::is_error($esc), "integration: jail escape returns an error envelope"
+assert_eq Mcpd::Client::error_message($esc), "path escapes root: ../../etc/passwd", "integration: error_message unwraps the jail violation (no die location)"
+mcp_close($ih)
+unlink "$jail/note.txt"
+rmdir $jail
+unlink $isrv
 
 test_run

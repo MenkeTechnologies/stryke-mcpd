@@ -29,12 +29,15 @@ fn Mcpd::Server::log ($msg) {
 
 ## Wrap a run coderef in an error envelope: a die inside the tool
 ## returns "ERROR: <message>" to the client; the server keeps serving.
-## Failures are logged when `log_to` is configured.
+## Failures are logged when `log_to` is configured. The stryke/Perl die
+## location (" at FILE line N.") is stripped so the client — often an LLM
+## — sees just the message, not the server's internal file paths.
 fn Mcpd::Server::wrap ($name, $run) {
     fn {
         val $r = eval { $run->(@_) }
         if ($@) {
-            val $e = $@ =~ s/\n+$//r
+            var $e = $@ =~ s/\n+$//r
+            $e =~ s/ at \S+ line \d+\.?$//
             Mcpd::Server::log("tool $name failed: $e")
             return "ERROR: $e"
         }
