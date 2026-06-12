@@ -11,6 +11,8 @@
 
 package Mcpd::Server
 
+use Mcpd::Schema
+
 # mysync: shared mutable across closures (stryke captures by value).
 mysync $Mcpd::Server::log_path = undef
 
