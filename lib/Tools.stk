@@ -187,6 +187,42 @@ fn Mcpd::Tools::sys_info {
 ## The full stock pack as one list. opts forwarded to each generator.
 ## opts readonly => 1 drops the mutating tools (fs_write, sh_exec) —
 ## the safe default for servers that only need to answer questions.
+## First $lines lines of a file under $root (a sandboxed `head`).
+fn Mcpd::Tools::fs_head ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_head", "Read the first N lines of a file under $root",
+        +{ path => "string", lines => "number" },
+        fn {
+            val $args = shift
+            val $n = int($args->{lines})
+            die "lines must be positive" if $n <= 0
+            val @lines = split(/\n/, slurp(Mcpd::Tools::jail($root, $args->{path})))
+            val $end = $#lines < $n - 1 ? $#lines : $n - 1
+            $end < 0 ? "" : join("\n", @lines[0 .. $end])
+        })
+}
+
+## Read a single environment variable (read-only; "(unset)" when absent).
+fn Mcpd::Tools::env_get {
+    Mcpd::Schema::tool("env_get", "Read an environment variable by name",
+        +{ name => "string" },
+        fn {
+            val $args = shift
+            $ENV{ $args->{name} } // "(unset)"
+        })
+}
+
+## Current time: Unix epoch seconds plus a local-time string.
+fn Mcpd::Tools::time_now {
+    Mcpd::Schema::tool("time_now", "Current time (Unix epoch seconds + local string)",
+        +{},
+        fn {
+            val $t = time()
+            "epoch: $t\nlocal: " . scalar(localtime($t))
+        })
+}
+
 fn Mcpd::Tools::all ($opts = undef) {
     $opts //= +{}
     var @pack = (
@@ -195,6 +231,9 @@ fn Mcpd::Tools::all ($opts = undef) {
         Mcpd::Tools::fs_grep($opts),
         Mcpd::Tools::fs_find($opts),
         Mcpd::Tools::fs_stat($opts),
+        Mcpd::Tools::fs_head($opts),
+        Mcpd::Tools::env_get(),
+        Mcpd::Tools::time_now(),
     )
     unless ($opts->{readonly}) {
         push @pack, Mcpd::Tools::fs_write($opts)
@@ -205,4 +244,4 @@ fn Mcpd::Tools::all ($opts = undef) {
 }
 
 ## All stock tool names this sublib ships (full, non-readonly pack).
-fn Mcpd::Tools::names { qw(fs_read fs_list fs_grep fs_find fs_stat fs_write sh_exec sys_info) }
+fn Mcpd::Tools::names { qw(fs_read fs_list fs_grep fs_find fs_stat fs_head env_get time_now fs_write sh_exec sys_info) }
