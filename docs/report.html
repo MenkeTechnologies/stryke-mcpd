@@ -99,7 +99,7 @@
 
       <div class="stat-grid">
         <div class="stat-card"><div class="stat-val">4</div><div class="stat-label">sublibraries</div></div>
-        <div class="stat-card"><div class="stat-val cyan">36</div><div class="stat-label">public fns</div></div>
+        <div class="stat-card"><div class="stat-val cyan">39</div><div class="stat-label">public fns</div></div>
         <div class="stat-card"><div class="stat-val green">0</div><div class="stat-label">cdylib / helper binaries</div></div>
         <div class="stat-card"><div class="stat-val yellow">94</div><div class="stat-label">assertions in t/</div></div>
         <div class="stat-card"><div class="stat-val">4</div><div class="stat-label">runnable examples</div></div>
@@ -148,7 +148,7 @@
         <tbody>
           <tr><td>Schema</td><td><code>tool</code> accepts a full spec and rejects non-identifier names, empty descriptions, unknown param types, non-coderef runs; <code>check_args</code> accepts exact args and rejects missing / mistyped / extra params; <code>validate_all</code> counts, rejects non-arrayrefs, duplicates, partial specs; <code>param_names</code> sorted, <code>tool_summary</code> signature, <code>describe</code> catalog + validation, <code>rename</code> preserves fields and re-validates.</td></tr>
           <tr><td>Server</td><td><code>wrap</code> passes results through and converts <code>die</code> to the <code>ERROR:</code> envelope; <code>log_to</code> + <code>log</code> + <code>log_path</code> manage the configured file; <code>wrap_all</code> preserves every spec key while wrapping (pins strykelang BUG-305); <code>audit</code> logs successful calls with a byte count.</td></tr>
-          <tr><td>Tools</td><td><code>jail</code> resolves inside, collapses interior <code>..</code>, dies on dotdot and absolute escapes; stock pack validates as 8 specs (6 in readonly mode); <code>fs_read</code>/<code>fs_list</code>/<code>fs_grep</code>/<code>fs_find</code>/<code>fs_stat</code>/<code>fs_write</code> all exercised through the jail incl. escape rejection, depth caps, dotfile listing; <code>sh_exec</code> runs an allowlisted command and rejects everything else.</td></tr>
+          <tr><td>Tools</td><td><code>jail</code> resolves inside, collapses interior <code>..</code>, dies on dotdot and absolute escapes; stock pack validates as 11 specs (9 in readonly mode); <code>fs_read</code>/<code>fs_list</code>/<code>fs_grep</code>/<code>fs_find</code>/<code>fs_stat</code>/<code>fs_write</code> all exercised through the jail incl. escape rejection, depth caps, dotfile listing; <code>sh_exec</code> runs an allowlisted command and rejects everything else.</td></tr>
           <tr><td>Client</td><td><code>text</code> joins multi-block content and returns "" on empty; <code>texts</code> unjoined; <code>content_types</code> distinct + sorted; <code>is_error</code> detects the wrap envelope; <code>error_message</code> strips the prefix (undef on clean); <code>has_tool</code> queries discovery over the live round trip.</td></tr>
           <tr><td>Round trip</td><td>Generate server script &rarr; <code>mcp_connect("stdio:stryke ...")</code> &rarr; tool list matches &rarr; <code>add(2,40)</code> returns 42 &rarr; dying tool returns the envelope &rarr; same connection still serves.</td></tr>
         </tbody>

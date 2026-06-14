@@ -90,11 +90,11 @@ assert_dies fn { Mcpd::Tools::jail("/srv/data", "/etc/passwd") },      "jail blo
 
 # ── Tools specs are well-formed ──────────────────────────────────────
 val $pack = Mcpd::Tools::all(+{ root => "/tmp" })
-assert_eq Mcpd::Schema::validate_all($pack), 8,    "stock pack is 8 valid tools"
-assert_eq scalar(Mcpd::Tools::names()), 8,         "stock roster pinned at 8"
+assert_eq Mcpd::Schema::validate_all($pack), 11,   "stock pack is 11 valid tools"
+assert_eq scalar(Mcpd::Tools::names()), 11,        "stock roster pinned at 11"
 
 val $ro_pack = Mcpd::Tools::all(+{ root => "/tmp", readonly => 1 })
-assert_eq Mcpd::Schema::validate_all($ro_pack), 6, "readonly pack drops 2 mutating tools"
+assert_eq Mcpd::Schema::validate_all($ro_pack), 9, "readonly pack drops 2 mutating tools"
 val %ro_names = map { $_->{name} => 1 } @$ro_pack
 assert_ok !$ro_names{fs_write},                    "readonly pack has no fs_write"
 assert_ok !$ro_names{sh_exec},                     "readonly pack has no sh_exec"
@@ -218,7 +218,7 @@ val $ih = mcp_connect("stdio:stryke $isrv")
 assert_ok Mcpd::Client::has_tool($ih, "fs_write"),  "integration: stock fs_write exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "fs_read"),   "integration: stock fs_read exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "greet"),     "integration: custom tool composed with stock pack"
-assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 9, "integration: 8 stock + 1 custom tool"
+assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 12, "integration: 11 stock + 1 custom tool"
 # write then read back through the live jailed server
 Mcpd::Client::call_text($ih, "fs_write", +{ path => "note.txt", content => "live-jailed" })
 assert_eq slurp("$jail/note.txt"), "live-jailed", "integration: fs_write landed inside the jail"
