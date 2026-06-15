@@ -48,6 +48,15 @@ fn Mcpd::Client::content_types ($result) {
     [ sort grep { !$seen{$_}++ } map { $_->{type} // "" } @{ $result->{content} } ]
 }
 
+## All content blocks of a given $type from a tool result, as a list of the
+## block hashrefs — so image blocks keep their data/mimeType, resource blocks
+## their resource, and so on. The general form of `texts` (which is the
+## text-only special case). Empty list for an empty/blockless result.
+fn Mcpd::Client::content_of_type ($result, $type) {
+    return [] unless ref($result) eq "HASH" && ref($result->{content}) eq "ARRAY"
+    [ grep { ($_->{type} // "") eq $type } @{ $result->{content} } ]
+}
+
 ## The error text WITHOUT the "ERROR: " prefix, or undef when the
 ## result is not an error envelope. Pairs with `is_error`.
 fn Mcpd::Client::error_message ($result) {

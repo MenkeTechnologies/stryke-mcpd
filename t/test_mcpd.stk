@@ -210,6 +210,14 @@ assert_eq scalar(@{ Mcpd::Client::texts(+{}) }),       0,       "texts empty on 
 assert_eq join(",", @{ Mcpd::Client::content_types($multi) }), "image,text", "content_types distinct + sorted"
 assert_eq scalar(@{ Mcpd::Client::content_types(+{}) }),       0,            "content_types empty on missing content"
 
+# content_of_type: full blocks of a given type (general form of texts).
+val $imgs = Mcpd::Client::content_of_type($multi, "image")
+assert_eq scalar(@$imgs), 1,        "content_of_type: one image block"
+assert_eq $imgs->[0]{url}, "x",     "content_of_type: keeps the image block's fields (not just text)"
+assert_eq scalar(@{ Mcpd::Client::content_of_type($multi, "text") }), 2, "content_of_type: two text blocks"
+assert_eq scalar(@{ Mcpd::Client::content_of_type($multi, "audio") }), 0, "content_of_type: absent type → empty"
+assert_eq scalar(@{ Mcpd::Client::content_of_type(+{}, "text") }), 0, "content_of_type: empty on missing content"
+
 val $errenv = +{ content => [ +{ type => "text", text => "ERROR: boom happened" } ] }
 assert_eq Mcpd::Client::error_message($errenv), "boom happened", "error_message strips prefix"
 assert_ok !defined Mcpd::Client::error_message($env), "error_message undef on clean result"
