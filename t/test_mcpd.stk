@@ -90,15 +90,19 @@ assert_dies fn { Mcpd::Tools::jail("/srv/data", "/etc/passwd") },      "jail blo
 
 # ── Tools specs are well-formed ──────────────────────────────────────
 val $pack = Mcpd::Tools::all(+{ root => "/tmp" })
-assert_eq Mcpd::Schema::validate_all($pack), 11,   "stock pack is 11 valid tools"
-assert_eq scalar(Mcpd::Tools::names()), 11,        "stock roster pinned at 11"
+assert_eq Mcpd::Schema::validate_all($pack), 16,   "stock pack is 16 valid tools"
+assert_eq scalar(Mcpd::Tools::names()), 16,        "stock roster pinned at 16"
 
 val $ro_pack = Mcpd::Tools::all(+{ root => "/tmp", readonly => 1 })
-assert_eq Mcpd::Schema::validate_all($ro_pack), 9, "readonly pack drops 2 mutating tools"
+assert_eq Mcpd::Schema::validate_all($ro_pack), 12, "readonly pack drops 4 mutating tools"
 val %ro_names = map { $_->{name} => 1 } @$ro_pack
 assert_ok !$ro_names{fs_write},                    "readonly pack has no fs_write"
+assert_ok !$ro_names{fs_append},                   "readonly pack has no fs_append"
+assert_ok !$ro_names{fs_mkdir},                    "readonly pack has no fs_mkdir"
 assert_ok !$ro_names{sh_exec},                     "readonly pack has no sh_exec"
 assert_ok  $ro_names{fs_read},                     "readonly pack keeps fs_read"
+assert_ok  $ro_names{fs_tail},                     "readonly pack keeps fs_tail"
+assert_ok  $ro_names{fs_lines},                    "readonly pack keeps fs_lines"
 val $read_spec = Mcpd::Tools::fs_read(+{ root => "/tmp" })
 val $tmp_file = "/tmp/mcpd-fsread-$$.txt"
 spurt($tmp_file, "jail-read-ok")
@@ -218,7 +222,7 @@ val $ih = mcp_connect("stdio:stryke $isrv")
 assert_ok Mcpd::Client::has_tool($ih, "fs_write"),  "integration: stock fs_write exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "fs_read"),   "integration: stock fs_read exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "greet"),     "integration: custom tool composed with stock pack"
-assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 12, "integration: 11 stock + 1 custom tool"
+assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 17, "integration: 16 stock + 1 custom tool"
 # write then read back through the live jailed server
 Mcpd::Client::call_text($ih, "fs_write", +{ path => "note.txt", content => "live-jailed" })
 assert_eq slurp("$jail/note.txt"), "live-jailed", "integration: fs_write landed inside the jail"
@@ -232,5 +236,47 @@ mcp_close($ih)
 unlink "$jail/note.txt"
 rmdir $jail
 unlink $isrv
+
+# ── v0.6.0 stock tools (handler-level, real files under a temp jail) ──
+val $troot = "/tmp/mcpd-tools-$$"
+mkdir $troot
+spurt("$troot/log.txt", "l1\nl2\nl3\nl4\nl5")
+
+# fs_tail
+val $tail = Mcpd::Tools::fs_tail(+{ root => $troot })
+assert_eq $tail->{run}->(+{ path => "log.txt", lines => 2 }), "l4\nl5", "fs_tail returns last N lines"
+assert_dies fn { $tail->{run}->(+{ path => "log.txt", lines => 0 }) }, "fs_tail rejects non-positive N"
+
+# fs_exists
+val $ex = Mcpd::Tools::fs_exists(+{ root => $troot })
+assert_eq $ex->{run}->(+{ path => "log.txt" }), "file", "fs_exists reports file"
+assert_eq $ex->{run}->(+{ path => "nope.txt" }), "missing", "fs_exists reports missing"
+
+# fs_lines (wc): 5 content lines, 4 newlines → wc -l semantics = 4
+val $wc = Mcpd::Tools::fs_lines(+{ root => $troot })
+assert_match qr/lines: 4\n/, $wc->{run}->(+{ path => "log.txt" }), "fs_lines counts newlines (wc -l)"
+assert_match qr/words: 5/,    $wc->{run}->(+{ path => "log.txt" }), "fs_lines counts words"
+
+# fs_append creates then appends
+val $app = Mcpd::Tools::fs_append(+{ root => $troot })
+$app->{run}->(+{ path => "out.txt", content => "a" })
+$app->{run}->(+{ path => "out.txt", content => "b" })
+assert_eq slurp("$troot/out.txt"), "ab", "fs_append concatenates across calls"
+
+# fs_mkdir
+val $mk = Mcpd::Tools::fs_mkdir(+{ root => $troot })
+assert_match qr/^created/, $mk->{run}->(+{ path => "sub" }), "fs_mkdir creates a dir"
+val $sub_made = -d "$troot/sub" ? 1 : 0
+assert_ok $sub_made, "fs_mkdir directory exists on disk"
+assert_match qr/^exists/, $mk->{run}->(+{ path => "sub" }), "fs_mkdir is idempotent"
+
+# jail still applies to the new tools
+assert_dies fn { $app->{run}->(+{ path => "../escape.txt", content => "x" }) }, "fs_append honors the jail"
+assert_dies fn { $mk->{run}->(+{ path => "/etc/evil" }) }, "fs_mkdir honors the jail"
+
+unlink "$troot/log.txt"
+unlink "$troot/out.txt"
+rmdir "$troot/sub"
+rmdir $troot
 
 test_run

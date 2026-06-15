@@ -223,6 +223,85 @@ fn Mcpd::Tools::time_now {
         })
 }
 
+## Read the last N lines of a file under $root — the tail of a log. Readonly.
+fn Mcpd::Tools::fs_tail ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_tail", "Read the last N lines of a file under $root",
+        +{ path => "string", lines => "number" },
+        fn {
+            val $args = shift
+            val $n = int($args->{lines})
+            die "lines must be positive" if $n <= 0
+            val @lines = split(/\n/, slurp(Mcpd::Tools::jail($root, $args->{path})))
+            val $start = scalar(@lines) > $n ? scalar(@lines) - $n : 0
+            $start > $#lines ? "" : join("\n", @lines[$start .. $#lines])
+        })
+}
+
+## Report whether a path exists under $root and, if so, its type. Readonly.
+fn Mcpd::Tools::fs_exists ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_exists", "Report whether a path exists under $root and its type",
+        +{ path => "string" },
+        fn {
+            val $args = shift
+            val $p = Mcpd::Tools::jail($root, $args->{path})
+            unless (-e $p) {
+                return "missing"
+            }
+            val $type = -d $p ? "dir" : -l $p ? "link" : "file"
+            $type
+        })
+}
+
+## Count lines, words and bytes of a file under $root (wc). Readonly.
+fn Mcpd::Tools::fs_lines ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_lines", "Count lines, words and bytes of a file under $root",
+        +{ path => "string" },
+        fn {
+            val $args = shift
+            val $text  = slurp(Mcpd::Tools::jail($root, $args->{path}))
+            val $bytes = length($text)
+            val $lines = $text eq "" ? 0 : scalar(split(/\n/, $text, -1)) - 1
+            val @words = grep { length $_ } split(/\s+/, $text)
+            "lines: $lines\nwords: " . scalar(@words) . "\nbytes: $bytes"
+        })
+}
+
+## Append text to a file under $root, creating it if absent. Mutating.
+fn Mcpd::Tools::fs_append ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_append", "Append text to a file under $root (created if absent)",
+        +{ path => "string", content => "string" },
+        fn {
+            val $args = shift
+            val $dest = Mcpd::Tools::jail($root, $args->{path})
+            val $existing = -e $dest ? slurp($dest) : ""
+            spurt($dest, $existing . $args->{content})
+            "appended " . length($args->{content}) . " bytes to $args->{path}"
+        })
+}
+
+## Create a directory under $root (no-op if it already exists). Mutating.
+fn Mcpd::Tools::fs_mkdir ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_mkdir", "Create a directory under $root",
+        +{ path => "string" },
+        fn {
+            val $args = shift
+            val $dir = Mcpd::Tools::jail($root, $args->{path})
+            return "exists: $args->{path}" if -d $dir
+            mkdir($dir) or die "mkdir failed: $args->{path}"
+            "created $args->{path}"
+        })
+}
+
 fn Mcpd::Tools::all ($opts = undef) {
     $opts //= +{}
     var @pack = (
@@ -232,11 +311,16 @@ fn Mcpd::Tools::all ($opts = undef) {
         Mcpd::Tools::fs_find($opts),
         Mcpd::Tools::fs_stat($opts),
         Mcpd::Tools::fs_head($opts),
+        Mcpd::Tools::fs_tail($opts),
+        Mcpd::Tools::fs_exists($opts),
+        Mcpd::Tools::fs_lines($opts),
         Mcpd::Tools::env_get(),
         Mcpd::Tools::time_now(),
     )
     unless ($opts->{readonly}) {
         push @pack, Mcpd::Tools::fs_write($opts)
+        push @pack, Mcpd::Tools::fs_append($opts)
+        push @pack, Mcpd::Tools::fs_mkdir($opts)
         push @pack, Mcpd::Tools::sh_exec($opts)
     }
     push @pack, Mcpd::Tools::sys_info()
@@ -244,4 +328,7 @@ fn Mcpd::Tools::all ($opts = undef) {
 }
 
 ## All stock tool names this sublib ships (full, non-readonly pack).
-fn Mcpd::Tools::names { qw(fs_read fs_list fs_grep fs_find fs_stat fs_head env_get time_now fs_write sh_exec sys_info) }
+fn Mcpd::Tools::names {
+    qw(fs_read fs_list fs_grep fs_find fs_stat fs_head fs_tail fs_exists
+       fs_lines env_get time_now fs_write fs_append fs_mkdir sh_exec sys_info)
+}
