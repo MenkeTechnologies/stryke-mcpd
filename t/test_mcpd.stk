@@ -58,6 +58,16 @@ val $js0 = Mcpd::Schema::to_json_schema(Mcpd::Schema::tool("nop", "d", +{}, fn {
 assert_eq scalar(@{ $js0->{required} }),     0,          "to_json_schema: no params → empty required"
 assert_eq scalar(keys %{ $js0->{properties} }), 0,       "to_json_schema: no params → empty properties"
 
+# ── Schema::to_tool_list (MCP tools/list payload) ─────────────────────
+val $list = Mcpd::Schema::to_tool_list([$sp2, Mcpd::Schema::tool("ping", "Ping", +{}, fn { 1 })])
+assert_eq scalar(@$list),               2,           "to_tool_list: one descriptor per tool"
+assert_eq $list->[0]{name},             "add",       "to_tool_list: name carried"
+assert_eq $list->[0]{description},       "Add two numbers", "to_tool_list: description carried"
+assert_eq $list->[0]{inputSchema}{type}, "object",   "to_tool_list: inputSchema embedded"
+assert_eq $list->[0]{inputSchema}{properties}{a}{type}, "number", "to_tool_list: per-param schema"
+assert_eq scalar(keys %{ $list->[1]{inputSchema}{properties} }), 0, "to_tool_list: paramless tool → empty schema"
+assert_dies fn { Mcpd::Schema::to_tool_list("nope") }, "to_tool_list: validates the set"
+
 # ── Server::wrap error envelope ──────────────────────────────────────
 val $ok_run  = Mcpd::Server::wrap("t1", fn { "fine" })
 val $bad_run = Mcpd::Server::wrap("t2", fn { die "boom" })

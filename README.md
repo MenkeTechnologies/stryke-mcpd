@@ -96,7 +96,7 @@ s build --release          # target/release/<name> — no interpreter on the tar
 
 | # | Module | File | Fns | Highlights |
 |---|--------|------|----:|------------|
-| 1 | `Mcpd::Schema` | `lib/Schema.stk` | 9 | `tool` (validated spec) · `check_args` (type-checked args) · `validate_all` (unique names, full specs) · `types` · `param_names` · `to_json_schema` (MCP inputSchema) · `tool_summary` · `describe` (catalog) · `rename` |
+| 1 | `Mcpd::Schema` | `lib/Schema.stk` | 10 | `tool` (validated spec) · `check_args` (type-checked args) · `validate_all` (unique names, full specs) · `types` · `param_names` · `to_json_schema` (MCP inputSchema) · `to_tool_list` (MCP tools/list payload) · `tool_summary` · `describe` (catalog) · `rename` |
 | 2 | `Mcpd::Server` | `lib/Server.stk` | 7 | `serve` (validate + wrap + `mcp_server_start`) · `wrap` (die → `ERROR:` envelope) · `wrap_all` · `audit` (log successes) · `log_to`/`log`/`log_path` (file-only diagnostics) |
 | 3 | `Mcpd::Tools` | `lib/Tools.stk` | 19 | `fs_read` · `fs_list` · `fs_grep` · `fs_find` (recursive, capped) · `fs_stat` · `fs_head` (first N lines) · `fs_tail` (last N lines) · `fs_exists` · `fs_lines` (wc) · `fs_write` · `fs_append` · `fs_mkdir` · `sh_exec` (allowlist) · `env_get` · `time_now` · `sys_info` · `all` (`readonly` mode) · `jail` (root confinement) · `names` |
 | 4 | `Mcpd::Client` | `lib/Client.stk` | 8 | `text` (envelope → string) · `texts` (unjoined blocks) · `content_types` · `call_text` (call + extract) · `is_error` · `error_message` (strip prefix) · `tool_names` · `has_tool` |

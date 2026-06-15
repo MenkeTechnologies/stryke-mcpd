@@ -123,6 +123,21 @@ fn Mcpd::Schema::describe ($tools) {
     join "\n", map { Mcpd::Schema::tool_summary($_) } @$tools
 }
 
+## Render a whole tool set as the MCP `tools/list` payload: an arrayref of
+## { name, description, inputSchema } descriptors (inputSchema from
+## to_json_schema). The machine companion to `describe`. Validates the set
+## first so a malformed spec fails here rather than at serve time.
+fn Mcpd::Schema::to_tool_list ($tools) {
+    Mcpd::Schema::validate_all($tools)
+    [ map {
+        +{
+            name        => $_->{name},
+            description => $_->{description},
+            inputSchema => Mcpd::Schema::to_json_schema($_),
+        }
+    } @$tools ]
+}
+
 ## A copy of $spec under a new name, re-validated. The other fields
 ## (description, parameters, run) are preserved. Uses the parenthesized
 ## list-splat idiom — `+{ %$spec, name => ... }` drops the spread keys
