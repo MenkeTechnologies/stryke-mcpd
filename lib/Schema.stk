@@ -90,6 +90,23 @@ fn Mcpd::Schema::param_names ($spec) {
     [ sort keys %{ $spec->{parameters} // +{} } ]
 }
 
+## Render a spec's parameters as a JSON Schema object — the MCP `inputSchema`
+## wire format: +{ type => "object", properties => { p => +{ type => "..." } },
+## required => [...] }. Every declared parameter is required in this model, so
+## `required` lists them all. The machine companion to `tool_summary`.
+fn Mcpd::Schema::to_json_schema ($spec) {
+    val $params = $spec->{parameters} // +{}
+    var %props
+    for my $p (sort keys %$params) {
+        $props{$p} = +{ type => $params->{$p} }
+    }
+    +{
+        type       => "object",
+        properties => \%props,
+        required   => [ sort keys %$params ],
+    }
+}
+
 ## One-line signature: "name(a:number, b:string) — description". The
 ## human-readable form for a tool catalog or a log line.
 fn Mcpd::Schema::tool_summary ($spec) {

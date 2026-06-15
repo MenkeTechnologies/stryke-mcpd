@@ -48,6 +48,16 @@ assert_eq ref($rn->{run}),    "CODE",            "rename preserves run coderef"
 assert_eq join(",", @{ Mcpd::Schema::param_names($rn) }), "a,b", "rename preserves parameters"
 assert_dies fn { Mcpd::Schema::rename($sp2, "9bad") }, "rename re-validates the new name"
 
+# ── Schema::to_json_schema (MCP inputSchema wire format) ──────────────
+val $js = Mcpd::Schema::to_json_schema($sp2)
+assert_eq $js->{type},                       "object",   "to_json_schema: object type"
+assert_eq $js->{properties}{a}{type},        "number",   "to_json_schema: per-param type"
+assert_eq $js->{properties}{b}{type},        "number",   "to_json_schema: second param"
+assert_eq join(",", @{ $js->{required} }),   "a,b",      "to_json_schema: all params required, sorted"
+val $js0 = Mcpd::Schema::to_json_schema(Mcpd::Schema::tool("nop", "d", +{}, fn { 1 }))
+assert_eq scalar(@{ $js0->{required} }),     0,          "to_json_schema: no params → empty required"
+assert_eq scalar(keys %{ $js0->{properties} }), 0,       "to_json_schema: no params → empty properties"
+
 # ── Server::wrap error envelope ──────────────────────────────────────
 val $ok_run  = Mcpd::Server::wrap("t1", fn { "fine" })
 val $bad_run = Mcpd::Server::wrap("t2", fn { die "boom" })
