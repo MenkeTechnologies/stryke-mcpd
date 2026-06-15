@@ -107,6 +107,24 @@ fn Mcpd::Schema::to_json_schema ($spec) {
     }
 }
 
+## Extract a `parameters` hashref (param name → type) from an MCP `inputSchema`
+## JSON Schema object — the inverse of `to_json_schema`. Reads each entry's
+## `type` out of the `properties` map, so a client can reconstruct a param spec
+## from a `tools/list` descriptor it received over the wire. Dies if the schema
+## is not an object schema or a property is missing its type.
+fn Mcpd::Schema::from_json_schema ($schema) {
+    die "Mcpd::Schema::from_json_schema: schema must be a hashref" unless ref($schema) eq "HASH"
+    val $props = $schema->{properties} // +{}
+    die "Mcpd::Schema::from_json_schema: properties must be a hashref" unless ref($props) eq "HASH"
+    var %params
+    for my $p (sort keys %$props) {
+        val $t = ref($props->{$p}) eq "HASH" ? $props->{$p}{type} : undef
+        die "Mcpd::Schema::from_json_schema: property `$p` has no type" unless defined $t
+        $params{$p} = $t
+    }
+    \%params
+}
+
 ## One-line signature: "name(a:number, b:string) — description". The
 ## human-readable form for a tool catalog or a log line.
 fn Mcpd::Schema::tool_summary ($spec) {

@@ -58,6 +58,17 @@ val $js0 = Mcpd::Schema::to_json_schema(Mcpd::Schema::tool("nop", "d", +{}, fn {
 assert_eq scalar(@{ $js0->{required} }),     0,          "to_json_schema: no params → empty required"
 assert_eq scalar(keys %{ $js0->{properties} }), 0,       "to_json_schema: no params → empty properties"
 
+# ── Schema::from_json_schema (inverse of to_json_schema) ──────────────
+val $back = Mcpd::Schema::from_json_schema($js)
+assert_eq $back->{a},               "number", "from_json_schema: pulls type from properties"
+assert_eq $back->{b},               "number", "from_json_schema: second param"
+assert_eq scalar(keys %$back),      2,        "from_json_schema: only the declared params"
+# Round-trips with to_json_schema for any spec's parameters.
+assert_eq join(",", sort keys %{ Mcpd::Schema::from_json_schema(Mcpd::Schema::to_json_schema($sp2)) }), "a,b", "from_json_schema: round-trips to_json_schema"
+assert_eq scalar(keys %{ Mcpd::Schema::from_json_schema($js0) }), 0, "from_json_schema: paramless schema → empty"
+assert_dies fn { Mcpd::Schema::from_json_schema("nope") }, "from_json_schema: rejects a non-hashref schema"
+assert_dies fn { Mcpd::Schema::from_json_schema(+{ type => "object", properties => +{ x => +{} } }) }, "from_json_schema: rejects a property with no type"
+
 # ── Schema::to_tool_list (MCP tools/list payload) ─────────────────────
 val $list = Mcpd::Schema::to_tool_list([$sp2, Mcpd::Schema::tool("ping", "Ping", +{}, fn { 1 })])
 assert_eq scalar(@$list),               2,           "to_tool_list: one descriptor per tool"
