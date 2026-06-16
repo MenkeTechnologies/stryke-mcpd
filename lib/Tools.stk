@@ -225,6 +225,28 @@ fn Mcpd::Tools::fs_slice ($opts = undef) {
         })
 }
 
+## fs_hash: checksum a file under $root — for verifying integrity or detecting a
+## change without re-reading the whole file content into the model. Params: path,
+## algorithm (sha256 default, or sha1 / md5 / crc32). Read-only.
+fn Mcpd::Tools::fs_hash ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_hash", "Checksum a file under $root (algorithm: sha256 [default], sha1, md5, crc32)",
+        +{ path => "string", algorithm => "string" },
+        fn {
+            val $args = shift
+            val $algo = $args->{algorithm} // "sha256"
+            val $data = slurp(Mcpd::Tools::jail($root, $args->{path}))
+            val $digest =
+                $algo eq "sha256" ? sha256($data)
+              : $algo eq "sha1"   ? sha1($data)
+              : $algo eq "md5"    ? md5($data)
+              : $algo eq "crc32"  ? crc32($data)
+              : die("unknown algorithm: $algo (sha256|sha1|md5|crc32)")
+            "$algo: $digest"
+        })
+}
+
 ## Read a single environment variable (read-only; "(unset)" when absent).
 fn Mcpd::Tools::env_get {
     Mcpd::Schema::tool("env_get", "Read an environment variable by name",
@@ -376,6 +398,7 @@ fn Mcpd::Tools::all ($opts = undef) {
         Mcpd::Tools::fs_head($opts),
         Mcpd::Tools::fs_tail($opts),
         Mcpd::Tools::fs_slice($opts),
+        Mcpd::Tools::fs_hash($opts),
         Mcpd::Tools::fs_exists($opts),
         Mcpd::Tools::fs_lines($opts),
         Mcpd::Tools::env_get(),
@@ -395,6 +418,6 @@ fn Mcpd::Tools::all ($opts = undef) {
 
 ## All stock tool names this sublib ships (full, non-readonly pack).
 fn Mcpd::Tools::names {
-    qw(fs_read fs_list fs_grep fs_find fs_stat fs_head fs_tail fs_slice fs_exists
+    qw(fs_read fs_list fs_grep fs_find fs_stat fs_head fs_tail fs_slice fs_hash fs_exists
        fs_lines env_get time_now fs_write fs_append fs_mkdir fs_copy fs_move sh_exec sys_info)
 }
