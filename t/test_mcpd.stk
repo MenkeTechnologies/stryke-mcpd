@@ -141,17 +141,18 @@ assert_dies fn { Mcpd::Tools::jail("/srv/data", "/etc/passwd") },      "jail blo
 
 # ── Tools specs are well-formed ──────────────────────────────────────
 val $pack = Mcpd::Tools::all(+{ root => "/tmp" })
-assert_eq Mcpd::Schema::validate_all($pack), 20,   "stock pack is 20 valid tools"
-assert_eq scalar(Mcpd::Tools::names()), 20,        "stock roster pinned at 20"
+assert_eq Mcpd::Schema::validate_all($pack), 21,   "stock pack is 21 valid tools"
+assert_eq scalar(Mcpd::Tools::names()), 21,        "stock roster pinned at 21"
 
 val $ro_pack = Mcpd::Tools::all(+{ root => "/tmp", readonly => 1 })
-assert_eq Mcpd::Schema::validate_all($ro_pack), 14, "readonly pack drops 6 mutating tools"
+assert_eq Mcpd::Schema::validate_all($ro_pack), 14, "readonly pack drops 7 mutating tools"
 val %ro_names = map { $_->{name} => 1 } @$ro_pack
 assert_ok !$ro_names{fs_copy},                     "readonly pack has no fs_copy"
 assert_ok !$ro_names{fs_move},                     "readonly pack has no fs_move"
 assert_ok !$ro_names{fs_write},                    "readonly pack has no fs_write"
 assert_ok !$ro_names{fs_append},                   "readonly pack has no fs_append"
 assert_ok !$ro_names{fs_mkdir},                    "readonly pack has no fs_mkdir"
+assert_ok !$ro_names{fs_rmdir},                    "readonly pack has no fs_rmdir"
 assert_ok !$ro_names{sh_exec},                     "readonly pack has no sh_exec"
 assert_ok  $ro_names{fs_read},                     "readonly pack keeps fs_read"
 assert_ok  $ro_names{fs_tail},                     "readonly pack keeps fs_tail"
@@ -180,6 +181,21 @@ unlink "$list_dir/a.txt"
 unlink "$list_dir/b.txt"
 unlink "$list_dir/.hidden"
 rmdir $list_dir
+
+# ── Tools: fs_mkdir / fs_rmdir lifecycle ─────────────────────────────
+val $dir_root = "/tmp/mcpd-dir-$$"
+mkdir $dir_root
+val $mkdir_spec = Mcpd::Tools::fs_mkdir(+{ root => $dir_root })
+val $rmdir_spec = Mcpd::Tools::fs_rmdir(+{ root => $dir_root })
+assert_match qr/created/, $mkdir_spec->{run}->(+{ path => "sub" }), "fs_mkdir creates a directory"
+assert_eq $rmdir_spec->{run}->(+{ path => "gone" }), "missing: gone", "fs_rmdir reports a missing directory"
+assert_match qr/removed/, $rmdir_spec->{run}->(+{ path => "sub" }), "fs_rmdir removes the empty directory"
+$mkdir_spec->{run}->(+{ path => "full" })
+spurt("$dir_root/full/x.txt", "x")
+assert_dies fn { $rmdir_spec->{run}->(+{ path => "full" }) }, "fs_rmdir dies on a non-empty directory"
+unlink "$dir_root/full/x.txt"
+rmdir "$dir_root/full"
+rmdir $dir_root
 
 # ── Tools: fs_grep run path (pins the qr// subscript-hoist fix) ──────
 val $grep_dir = "/tmp/mcpd-grep-$$"
@@ -306,7 +322,7 @@ val $ih = mcp_connect("stdio:stryke $isrv")
 assert_ok Mcpd::Client::has_tool($ih, "fs_write"),  "integration: stock fs_write exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "fs_read"),   "integration: stock fs_read exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "greet"),     "integration: custom tool composed with stock pack"
-assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 21, "integration: 20 stock + 1 custom tool"
+assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 22, "integration: 21 stock + 1 custom tool"
 # write then read back through the live jailed server
 Mcpd::Client::call_text($ih, "fs_write", +{ path => "note.txt", content => "live-jailed" })
 assert_eq slurp("$jail/note.txt"), "live-jailed", "integration: fs_write landed inside the jail"

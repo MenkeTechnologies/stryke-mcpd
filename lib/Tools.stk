@@ -387,6 +387,20 @@ fn Mcpd::Tools::fs_mkdir ($opts = undef) {
         })
 }
 
+fn Mcpd::Tools::fs_rmdir ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_rmdir", "Remove an empty directory under $root",
+        +{ path => "string" },
+        fn {
+            val $args = shift
+            val $dir = Mcpd::Tools::jail($root, $args->{path})
+            return "missing: $args->{path}" unless -d $dir
+            rmdir($dir) or die "rmdir failed (not empty?): $args->{path}"
+            "removed $args->{path}"
+        })
+}
+
 fn Mcpd::Tools::all ($opts = undef) {
     $opts //= +{}
     var @pack = (
@@ -408,6 +422,7 @@ fn Mcpd::Tools::all ($opts = undef) {
         push @pack, Mcpd::Tools::fs_write($opts)
         push @pack, Mcpd::Tools::fs_append($opts)
         push @pack, Mcpd::Tools::fs_mkdir($opts)
+        push @pack, Mcpd::Tools::fs_rmdir($opts)
         push @pack, Mcpd::Tools::fs_copy($opts)
         push @pack, Mcpd::Tools::fs_move($opts)
         push @pack, Mcpd::Tools::sh_exec($opts)
@@ -419,5 +434,5 @@ fn Mcpd::Tools::all ($opts = undef) {
 ## All stock tool names this sublib ships (full, non-readonly pack).
 fn Mcpd::Tools::names {
     qw(fs_read fs_list fs_grep fs_find fs_stat fs_head fs_tail fs_slice fs_hash fs_exists
-       fs_lines env_get time_now fs_write fs_append fs_mkdir fs_copy fs_move sh_exec sys_info)
+       fs_lines env_get time_now fs_write fs_append fs_mkdir fs_rmdir fs_copy fs_move sh_exec sys_info)
 }
