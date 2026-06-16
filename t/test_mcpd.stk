@@ -141,11 +141,11 @@ assert_dies fn { Mcpd::Tools::jail("/srv/data", "/etc/passwd") },      "jail blo
 
 # ── Tools specs are well-formed ──────────────────────────────────────
 val $pack = Mcpd::Tools::all(+{ root => "/tmp" })
-assert_eq Mcpd::Schema::validate_all($pack), 18,   "stock pack is 18 valid tools"
-assert_eq scalar(Mcpd::Tools::names()), 18,        "stock roster pinned at 18"
+assert_eq Mcpd::Schema::validate_all($pack), 19,   "stock pack is 19 valid tools"
+assert_eq scalar(Mcpd::Tools::names()), 19,        "stock roster pinned at 19"
 
 val $ro_pack = Mcpd::Tools::all(+{ root => "/tmp", readonly => 1 })
-assert_eq Mcpd::Schema::validate_all($ro_pack), 12, "readonly pack drops 6 mutating tools"
+assert_eq Mcpd::Schema::validate_all($ro_pack), 13, "readonly pack drops 6 mutating tools"
 val %ro_names = map { $_->{name} => 1 } @$ro_pack
 assert_ok !$ro_names{fs_copy},                     "readonly pack has no fs_copy"
 assert_ok !$ro_names{fs_move},                     "readonly pack has no fs_move"
@@ -155,6 +155,7 @@ assert_ok !$ro_names{fs_mkdir},                    "readonly pack has no fs_mkdi
 assert_ok !$ro_names{sh_exec},                     "readonly pack has no sh_exec"
 assert_ok  $ro_names{fs_read},                     "readonly pack keeps fs_read"
 assert_ok  $ro_names{fs_tail},                     "readonly pack keeps fs_tail"
+assert_ok  $ro_names{fs_slice},                    "readonly pack keeps fs_slice"
 assert_ok  $ro_names{fs_lines},                    "readonly pack keeps fs_lines"
 val $read_spec = Mcpd::Tools::fs_read(+{ root => "/tmp" })
 val $tmp_file = "/tmp/mcpd-fsread-$$.txt"
@@ -304,7 +305,7 @@ val $ih = mcp_connect("stdio:stryke $isrv")
 assert_ok Mcpd::Client::has_tool($ih, "fs_write"),  "integration: stock fs_write exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "fs_read"),   "integration: stock fs_read exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "greet"),     "integration: custom tool composed with stock pack"
-assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 19, "integration: 18 stock + 1 custom tool"
+assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 20, "integration: 19 stock + 1 custom tool"
 # write then read back through the live jailed server
 Mcpd::Client::call_text($ih, "fs_write", +{ path => "note.txt", content => "live-jailed" })
 assert_eq slurp("$jail/note.txt"), "live-jailed", "integration: fs_write landed inside the jail"
@@ -328,6 +329,15 @@ spurt("$troot/log.txt", "l1\nl2\nl3\nl4\nl5")
 val $tail = Mcpd::Tools::fs_tail(+{ root => $troot })
 assert_eq $tail->{run}->(+{ path => "log.txt", lines => 2 }), "l4\nl5", "fs_tail returns last N lines"
 assert_dies fn { $tail->{run}->(+{ path => "log.txt", lines => 0 }) }, "fs_tail rejects non-positive N"
+
+# fs_slice — 1-based inclusive line range (middle-of-file companion of head/tail)
+val $slice = Mcpd::Tools::fs_slice(+{ root => $troot })
+assert_eq $slice->{run}->(+{ path => "log.txt", start => 2, end => 4 }), "l2\nl3\nl4", "fs_slice returns the inclusive range"
+assert_eq $slice->{run}->(+{ path => "log.txt", start => 4, end => 99 }), "l4\nl5", "fs_slice clamps end past EOF"
+assert_eq $slice->{run}->(+{ path => "log.txt", start => 99, end => 100 }), "", "fs_slice past EOF is empty"
+assert_eq $slice->{run}->(+{ path => "log.txt", start => 3, end => 3 }), "l3", "fs_slice single-line range"
+assert_dies fn { $slice->{run}->(+{ path => "log.txt", start => 0, end => 2 }) }, "fs_slice rejects non-positive start"
+assert_dies fn { $slice->{run}->(+{ path => "log.txt", start => 4, end => 2 }) }, "fs_slice rejects end < start"
 
 # fs_exists
 val $ex = Mcpd::Tools::fs_exists(+{ root => $troot })

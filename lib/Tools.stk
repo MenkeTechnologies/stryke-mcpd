@@ -203,6 +203,28 @@ fn Mcpd::Tools::fs_head ($opts = undef) {
         })
 }
 
+## fs_slice: read a 1-based inclusive line range [start..end] of a file under
+## $root — the middle-of-file companion of fs_head/fs_tail, for reading context
+## around a grep hit without slurping the whole file. Params: path, start, end.
+## end past EOF clamps to the last line; start past EOF yields "". Read-only.
+fn Mcpd::Tools::fs_slice ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_slice", "Read lines [start..end] (1-based, inclusive) of a file under $root",
+        +{ path => "string", start => "number", end => "number" },
+        fn {
+            val $args  = shift
+            val $start = int($args->{start})
+            val $end   = int($args->{end})
+            die "start must be positive" if $start <= 0
+            die "end must be >= start" if $end < $start
+            val @lines = split(/\n/, slurp(Mcpd::Tools::jail($root, $args->{path})))
+            val $count = scalar(@lines)
+            val $hi = $end > $count ? $count : $end
+            $start > $count ? "" : join("\n", @lines[$start - 1 .. $hi - 1])
+        })
+}
+
 ## Read a single environment variable (read-only; "(unset)" when absent).
 fn Mcpd::Tools::env_get {
     Mcpd::Schema::tool("env_get", "Read an environment variable by name",
@@ -353,6 +375,7 @@ fn Mcpd::Tools::all ($opts = undef) {
         Mcpd::Tools::fs_stat($opts),
         Mcpd::Tools::fs_head($opts),
         Mcpd::Tools::fs_tail($opts),
+        Mcpd::Tools::fs_slice($opts),
         Mcpd::Tools::fs_exists($opts),
         Mcpd::Tools::fs_lines($opts),
         Mcpd::Tools::env_get(),
@@ -372,6 +395,6 @@ fn Mcpd::Tools::all ($opts = undef) {
 
 ## All stock tool names this sublib ships (full, non-readonly pack).
 fn Mcpd::Tools::names {
-    qw(fs_read fs_list fs_grep fs_find fs_stat fs_head fs_tail fs_exists
+    qw(fs_read fs_list fs_grep fs_find fs_stat fs_head fs_tail fs_slice fs_exists
        fs_lines env_get time_now fs_write fs_append fs_mkdir fs_copy fs_move sh_exec sys_info)
 }
