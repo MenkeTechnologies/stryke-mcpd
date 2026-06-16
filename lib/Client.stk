@@ -69,3 +69,14 @@ fn Mcpd::Client::has_tool ($h, $name) {
     val %ok = map { $_ => 1 } @{ Mcpd::Client::tool_names($h) }
     $ok{$name} ? 1 : 0
 }
+
+## The JSON `inputSchema` of the tool named $name on a connected server, or
+## undef when no such tool is exposed. Pairs with has_tool/tool_names: once a
+## tool is known to exist, this is how you introspect the arguments it accepts
+## (its JSON Schema, as the server advertises it over `tools/list`).
+fn Mcpd::Client::tool_schema ($h, $name) {
+    for val $t (@{ mcp_tools($h) }) {
+        return $t->{inputSchema} if ($t->{name} // "") eq $name
+    }
+    undef
+}
