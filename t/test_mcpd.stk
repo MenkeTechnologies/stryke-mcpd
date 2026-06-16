@@ -141,11 +141,11 @@ assert_dies fn { Mcpd::Tools::jail("/srv/data", "/etc/passwd") },      "jail blo
 
 # ── Tools specs are well-formed ──────────────────────────────────────
 val $pack = Mcpd::Tools::all(+{ root => "/tmp" })
-assert_eq Mcpd::Schema::validate_all($pack), 22,   "stock pack is 22 valid tools"
-assert_eq scalar(Mcpd::Tools::names()), 22,        "stock roster pinned at 22"
+assert_eq Mcpd::Schema::validate_all($pack), 23,   "stock pack is 23 valid tools"
+assert_eq scalar(Mcpd::Tools::names()), 23,        "stock roster pinned at 23"
 
 val $ro_pack = Mcpd::Tools::all(+{ root => "/tmp", readonly => 1 })
-assert_eq Mcpd::Schema::validate_all($ro_pack), 14, "readonly pack drops 8 mutating tools"
+assert_eq Mcpd::Schema::validate_all($ro_pack), 15, "readonly pack drops 8 mutating tools"
 val %ro_names = map { $_->{name} => 1 } @$ro_pack
 assert_ok !$ro_names{fs_copy},                     "readonly pack has no fs_copy"
 assert_ok !$ro_names{fs_move},                     "readonly pack has no fs_move"
@@ -160,6 +160,7 @@ assert_ok  $ro_names{fs_tail},                     "readonly pack keeps fs_tail"
 assert_ok  $ro_names{fs_slice},                    "readonly pack keeps fs_slice"
 assert_ok  $ro_names{fs_hash},                     "readonly pack keeps fs_hash"
 assert_ok  $ro_names{fs_lines},                    "readonly pack keeps fs_lines"
+assert_ok  $ro_names{fs_du},                       "readonly pack keeps fs_du (read-only)"
 val $read_spec = Mcpd::Tools::fs_read(+{ root => "/tmp" })
 val $tmp_file = "/tmp/mcpd-fsread-$$.txt"
 spurt($tmp_file, "jail-read-ok")
@@ -332,7 +333,7 @@ val $ih = mcp_connect("stdio:stryke $isrv")
 assert_ok Mcpd::Client::has_tool($ih, "fs_write"),  "integration: stock fs_write exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "fs_read"),   "integration: stock fs_read exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "greet"),     "integration: custom tool composed with stock pack"
-assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 23, "integration: 22 stock + 1 custom tool"
+assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 24, "integration: 23 stock + 1 custom tool"
 # write then read back through the live jailed server
 Mcpd::Client::call_text($ih, "fs_write", +{ path => "note.txt", content => "live-jailed" })
 assert_eq slurp("$jail/note.txt"), "live-jailed", "integration: fs_write landed inside the jail"
@@ -383,6 +384,22 @@ assert_eq $ex->{run}->(+{ path => "nope.txt" }), "missing", "fs_exists reports m
 val $wc = Mcpd::Tools::fs_lines(+{ root => $troot })
 assert_match qr/lines: 4\n/, $wc->{run}->(+{ path => "log.txt" }), "fs_lines counts newlines (wc -l)"
 assert_match qr/words: 5/,    $wc->{run}->(+{ path => "log.txt" }), "fs_lines counts words"
+
+# fs_du: recursive byte + file totals (5 + 3 bytes across 2 files in 2 dirs)
+val $du_root = "/tmp/mcpd-du-$$"
+mkdir $du_root
+mkdir "$du_root/sub"
+spurt("$du_root/a.txt", "12345")
+spurt("$du_root/sub/b.txt", "678")
+val $du = Mcpd::Tools::fs_du(+{ root => $du_root })
+assert_match qr/files: 2/,    $du->{run}->(+{ path => "." }), "fs_du counts files recursively"
+assert_match qr/bytes: 8\n/,  $du->{run}->(+{ path => "." }), "fs_du sums sizes recursively (5+3)"
+assert_eq $du->{run}->(+{ path => "a.txt" }), "bytes: 5\nfiles: 1", "fs_du of a single file is its own size"
+assert_dies fn { $du->{run}->(+{ path => "missing" }) }, "fs_du dies on a missing path"
+unlink "$du_root/a.txt"
+unlink "$du_root/sub/b.txt"
+rmdir "$du_root/sub"
+rmdir $du_root
 
 # fs_append creates then appends
 val $app = Mcpd::Tools::fs_append(+{ root => $troot })

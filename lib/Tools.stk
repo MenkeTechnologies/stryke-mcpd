@@ -100,6 +100,49 @@ fn Mcpd::Tools::fs_write ($opts = undef) {
         })
 }
 
+## fs_du: recursively total the byte size and file count under a path in the
+## jail — the directory-size companion of fs_stat (single file). A single file
+## reports its own size; a directory is walked breadth-first (symlinks not
+## followed) summing regular-file sizes. opts: root, max_depth (default 20),
+## max_files (cap, default 100000). Read-only.
+fn Mcpd::Tools::fs_du ($opts = undef) {
+    $opts //= +{}
+    val $root  = $opts->{root} // getcwd()
+    val $depth = $opts->{max_depth} // 20
+    val $cap   = $opts->{max_files} // 100000
+    Mcpd::Schema::tool("fs_du", "Recursively total the byte size and file count under a path in $root",
+        +{ path => "string" },
+        fn {
+            val $args = shift
+            val $start = Mcpd::Tools::jail($root, $args->{path})
+            die "no such path: $args->{path}" unless -e $start
+            unless (-d $start) {
+                val @st = stat($start)
+                return "bytes: $st[7]\nfiles: 1"
+            }
+            var $bytes = 0
+            var $files = 0
+            var @queue = ([$start, 0])
+            while (@queue) {
+                val $item = shift @queue
+                val ($dir, $d) = @$item
+                for my $full (sort (glob("$dir/.*"), glob("$dir/*"))) {
+                    val $b = basename($full)
+                    next if $b eq "." || $b eq ".."
+                    if (-d $full && !-l $full) {
+                        push @queue, [$full, $d + 1] if $d + 1 < $depth
+                    } elsif (-f $full && !-l $full) {
+                        val @st = stat($full)
+                        $bytes += $st[7]
+                        $files += 1
+                    }
+                }
+                last if $files >= $cap
+            }
+            "bytes: $bytes\nfiles: $files"
+        })
+}
+
 ## fs_stat: type / size / mtime for a path under the jail. opts: root.
 fn Mcpd::Tools::fs_stat ($opts = undef) {
     $opts //= +{}
@@ -424,6 +467,7 @@ fn Mcpd::Tools::all ($opts = undef) {
         Mcpd::Tools::fs_grep($opts),
         Mcpd::Tools::fs_find($opts),
         Mcpd::Tools::fs_stat($opts),
+        Mcpd::Tools::fs_du($opts),
         Mcpd::Tools::fs_head($opts),
         Mcpd::Tools::fs_tail($opts),
         Mcpd::Tools::fs_slice($opts),
@@ -449,6 +493,6 @@ fn Mcpd::Tools::all ($opts = undef) {
 
 ## All stock tool names this sublib ships (full, non-readonly pack).
 fn Mcpd::Tools::names {
-    qw(fs_read fs_list fs_grep fs_find fs_stat fs_head fs_tail fs_slice fs_hash fs_exists
+    qw(fs_read fs_list fs_grep fs_find fs_stat fs_du fs_head fs_tail fs_slice fs_hash fs_exists
        fs_lines env_get time_now fs_write fs_append fs_mkdir fs_rmdir fs_delete fs_copy fs_move sh_exec sys_info)
 }
