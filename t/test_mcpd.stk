@@ -79,6 +79,17 @@ assert_eq $list->[0]{inputSchema}{properties}{a}{type}, "number", "to_tool_list:
 assert_eq scalar(keys %{ $list->[1]{inputSchema}{properties} }), 0, "to_tool_list: paramless tool → empty schema"
 assert_dies fn { Mcpd::Schema::to_tool_list("nope") }, "to_tool_list: validates the set"
 
+# ── Schema::from_tool_list (inverse of to_tool_list) ──────────────────
+val $parsed = Mcpd::Schema::from_tool_list($list)
+assert_eq scalar(@$parsed),              2,       "from_tool_list: one descriptor per entry"
+assert_eq $parsed->[0]{name},            "add",   "from_tool_list: name carried"
+assert_eq $parsed->[0]{description},     "Add two numbers", "from_tool_list: description carried"
+assert_eq $parsed->[0]{parameters}{a},   "number","from_tool_list: inputSchema → params"
+assert_eq scalar(keys %{ $parsed->[1]{parameters} }), 0, "from_tool_list: paramless tool → empty params"
+assert_eq join(",", sort keys %{ $parsed->[0]{parameters} }), "a,b", "from_tool_list: round-trips to_tool_list params"
+assert_dies fn { Mcpd::Schema::from_tool_list("nope") }, "from_tool_list: rejects a non-arrayref"
+assert_dies fn { Mcpd::Schema::from_tool_list([ "x" ]) }, "from_tool_list: rejects a non-hashref entry"
+
 # ── Server::wrap error envelope ──────────────────────────────────────
 val $ok_run  = Mcpd::Server::wrap("t1", fn { "fine" })
 val $bad_run = Mcpd::Server::wrap("t2", fn { die "boom" })

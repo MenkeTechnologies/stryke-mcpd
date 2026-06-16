@@ -156,6 +156,22 @@ fn Mcpd::Schema::to_tool_list ($tools) {
     } @$tools ]
 }
 
+## Parse an MCP `tools/list` payload back into internal tool descriptors —
+## inverse of to_tool_list. Each { name, description, inputSchema } becomes a
+## { name, description, parameters } hashref (parameters via from_json_schema).
+## The wire format carries no executable, so the result has no `run` coderef.
+fn Mcpd::Schema::from_tool_list ($list) {
+    die "Mcpd::Schema::from_tool_list: tool list must be an arrayref" unless ref($list) eq "ARRAY"
+    [ map {
+        die "Mcpd::Schema::from_tool_list: each entry must be a hashref" unless ref($_) eq "HASH"
+        +{
+            name        => $_->{name},
+            description => $_->{description},
+            parameters  => Mcpd::Schema::from_json_schema($_->{inputSchema} // +{ properties => +{} }),
+        }
+    } @$list ]
+}
+
 ## A copy of $spec under a new name, re-validated. The other fields
 ## (description, parameters, run) are preserved. Uses the parenthesized
 ## list-splat idiom — `+{ %$spec, name => ... }` drops the spread keys
