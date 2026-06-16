@@ -305,6 +305,29 @@ fn Mcpd::Tools::fs_copy ($opts = undef) {
         })
 }
 
+## Move (rename) a file from `src` to `dst`, both resolved under $root (so
+## neither can escape the jail). Dies if the source is missing. Falls back to
+## copy-then-remove when `rename` can't cross a filesystem boundary. The relocate
+## companion to `fs_copy`. Mutating.
+fn Mcpd::Tools::fs_move ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_move", "Move/rename a file from `src` to `dst`, both under $root",
+        +{ src => "string", dst => "string" },
+        fn {
+            val $args = shift
+            val $from = Mcpd::Tools::jail($root, $args->{src})
+            val $to   = Mcpd::Tools::jail($root, $args->{dst})
+            die "fs_move: source `$args->{src}` does not exist" unless -e $from
+            unless (rename($from, $to)) {
+                # Cross-device fallback: copy the bytes, then remove the original.
+                spurt($to, slurp($from))
+                unlink($from) or die "fs_move: copied but could not remove `$args->{src}`"
+            }
+            "moved $args->{src} to $args->{dst}"
+        })
+}
+
 ## Create a directory under $root (no-op if it already exists). Mutating.
 fn Mcpd::Tools::fs_mkdir ($opts = undef) {
     $opts //= +{}
@@ -340,6 +363,7 @@ fn Mcpd::Tools::all ($opts = undef) {
         push @pack, Mcpd::Tools::fs_append($opts)
         push @pack, Mcpd::Tools::fs_mkdir($opts)
         push @pack, Mcpd::Tools::fs_copy($opts)
+        push @pack, Mcpd::Tools::fs_move($opts)
         push @pack, Mcpd::Tools::sh_exec($opts)
     }
     push @pack, Mcpd::Tools::sys_info()
@@ -349,5 +373,5 @@ fn Mcpd::Tools::all ($opts = undef) {
 ## All stock tool names this sublib ships (full, non-readonly pack).
 fn Mcpd::Tools::names {
     qw(fs_read fs_list fs_grep fs_find fs_stat fs_head fs_tail fs_exists
-       fs_lines env_get time_now fs_write fs_append fs_mkdir fs_copy sh_exec sys_info)
+       fs_lines env_get time_now fs_write fs_append fs_mkdir fs_copy fs_move sh_exec sys_info)
 }
