@@ -172,6 +172,18 @@ fn Mcpd::Schema::from_tool_list ($list) {
     } @$list ]
 }
 
+## Index a tool set into a { name => spec } hashref for O(1) dispatch of an MCP
+## tools/call by name. Validates the set first (unique names, full specs), so a
+## malformed or duplicate-named tool fails here rather than at call time.
+fn Mcpd::Schema::tool_map ($tools) {
+    Mcpd::Schema::validate_all($tools)
+    var %map
+    for my $t (@$tools) {
+        $map{ $t->{name} } = $t
+    }
+    \%map
+}
+
 ## A copy of $spec under a new name, re-validated. The other fields
 ## (description, parameters, run) are preserved. Uses the parenthesized
 ## list-splat idiom — `+{ %$spec, name => ... }` drops the spread keys

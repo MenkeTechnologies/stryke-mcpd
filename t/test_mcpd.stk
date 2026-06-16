@@ -90,6 +90,15 @@ assert_eq join(",", sort keys %{ $parsed->[0]{parameters} }), "a,b", "from_tool_
 assert_dies fn { Mcpd::Schema::from_tool_list("nope") }, "from_tool_list: rejects a non-arrayref"
 assert_dies fn { Mcpd::Schema::from_tool_list([ "x" ]) }, "from_tool_list: rejects a non-hashref entry"
 
+# ── Schema::tool_map (name → spec dispatch index) ─────────────────────
+val $ping = Mcpd::Schema::tool("ping", "Ping", +{}, fn { 1 })
+val $map  = Mcpd::Schema::tool_map([$sp2, $ping])
+assert_eq scalar(keys %$map),        2,       "tool_map: one entry per tool"
+assert_eq $map->{add}{description},  "Add two numbers", "tool_map: indexes by name"
+assert_eq $map->{ping}{name},        "ping",  "tool_map: second tool indexed"
+assert_dies fn { Mcpd::Schema::tool_map([$sp2, $sp2]) }, "tool_map: rejects a duplicate tool name"
+assert_dies fn { Mcpd::Schema::tool_map("nope") }, "tool_map: validates the set"
+
 # ── Server::wrap error envelope ──────────────────────────────────────
 val $ok_run  = Mcpd::Server::wrap("t1", fn { "fine" })
 val $bad_run = Mcpd::Server::wrap("t2", fn { die "boom" })
