@@ -159,6 +159,25 @@ fn Mcpd::Tools::fs_stat ($opts = undef) {
         })
 }
 
+## fs_readlink: read where a symlink points, under a jailed root. Params: path.
+## opts: root. Complements fs_stat's "link" type — fs_stat reports a path IS a
+## link, this reveals its target. The stored target is returned verbatim (it may
+## point outside the jail; nothing is followed). Read-only.
+fn Mcpd::Tools::fs_readlink ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_readlink", "Read a symlink's target under $root",
+        +{ path => "string" },
+        fn {
+            val $args = shift
+            val $p = Mcpd::Tools::jail($root, $args->{path})
+            die "not a symlink: $args->{path}" unless -l $p
+            val $target = readlink($p)
+            die "readlink failed: $args->{path}" unless defined $target
+            "target: $target"
+        })
+}
+
 ## fs_find: recursive filename search under a jailed directory.
 ## Params: path (start dir), pattern (regex on the path relative to
 ## the start dir). opts: root, max_depth (default 10), max_results
@@ -488,6 +507,7 @@ fn Mcpd::Tools::all ($opts = undef) {
         Mcpd::Tools::fs_grep($opts),
         Mcpd::Tools::fs_find($opts),
         Mcpd::Tools::fs_stat($opts),
+        Mcpd::Tools::fs_readlink($opts),
         Mcpd::Tools::fs_du($opts),
         Mcpd::Tools::fs_head($opts),
         Mcpd::Tools::fs_tail($opts),
@@ -515,6 +535,6 @@ fn Mcpd::Tools::all ($opts = undef) {
 
 ## All stock tool names this sublib ships (full, non-readonly pack).
 fn Mcpd::Tools::names {
-    qw(fs_read fs_list fs_grep fs_find fs_stat fs_du fs_head fs_tail fs_slice fs_hash fs_exists
+    qw(fs_read fs_list fs_grep fs_find fs_stat fs_readlink fs_du fs_head fs_tail fs_slice fs_hash fs_exists
        fs_lines env_get time_now fs_write fs_append fs_mkdir fs_touch fs_rmdir fs_delete fs_copy fs_move sh_exec sys_info)
 }

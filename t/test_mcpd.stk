@@ -141,11 +141,11 @@ assert_dies fn { Mcpd::Tools::jail("/srv/data", "/etc/passwd") },      "jail blo
 
 # ── Tools specs are well-formed ──────────────────────────────────────
 val $pack = Mcpd::Tools::all(+{ root => "/tmp" })
-assert_eq Mcpd::Schema::validate_all($pack), 24,   "stock pack is 24 valid tools"
-assert_eq scalar(Mcpd::Tools::names()), 24,        "stock roster pinned at 24"
+assert_eq Mcpd::Schema::validate_all($pack), 25,   "stock pack is 25 valid tools"
+assert_eq scalar(Mcpd::Tools::names()), 25,        "stock roster pinned at 25"
 
 val $ro_pack = Mcpd::Tools::all(+{ root => "/tmp", readonly => 1 })
-assert_eq Mcpd::Schema::validate_all($ro_pack), 15, "readonly pack drops 9 mutating tools"
+assert_eq Mcpd::Schema::validate_all($ro_pack), 16, "readonly pack drops 9 mutating tools"
 val %ro_names = map { $_->{name} => 1 } @$ro_pack
 assert_ok !$ro_names{fs_copy},                     "readonly pack has no fs_copy"
 assert_ok !$ro_names{fs_move},                     "readonly pack has no fs_move"
@@ -162,6 +162,7 @@ assert_ok  $ro_names{fs_slice},                    "readonly pack keeps fs_slice
 assert_ok  $ro_names{fs_hash},                     "readonly pack keeps fs_hash"
 assert_ok  $ro_names{fs_lines},                    "readonly pack keeps fs_lines"
 assert_ok  $ro_names{fs_du},                       "readonly pack keeps fs_du (read-only)"
+assert_ok  $ro_names{fs_readlink},                 "readonly pack keeps fs_readlink (read-only)"
 val $read_spec = Mcpd::Tools::fs_read(+{ root => "/tmp" })
 val $tmp_file = "/tmp/mcpd-fsread-$$.txt"
 spurt($tmp_file, "jail-read-ok")
@@ -179,6 +180,18 @@ assert_match qr/touched/, $touch_spec->{run}->(+{ path => $touch_file }), "fs_to
 assert_eq slurp($touch_path), "keep me",           "fs_touch never truncates existing content"
 unlink $touch_path
 assert_dies fn { $touch_spec->{run}->(+{ path => "../etc/passwd" }) }, "fs_touch stays inside the jail"
+
+val $readlink_spec = Mcpd::Tools::fs_readlink(+{ root => "/tmp" })
+val $rl_target = "mcpd-rltarget-$$.txt"
+val $rl_link   = "mcpd-rllink-$$"
+spurt("/tmp/$rl_target", "linked")
+unlink "/tmp/$rl_link" if -l "/tmp/$rl_link"
+symlink($rl_target, "/tmp/$rl_link")
+assert_eq $readlink_spec->{run}->(+{ path => $rl_link }), "target: $rl_target", "fs_readlink reveals the symlink target"
+assert_dies fn { $readlink_spec->{run}->(+{ path => $rl_target }) }, "fs_readlink dies on a non-symlink"
+assert_dies fn { $readlink_spec->{run}->(+{ path => "../etc/passwd" }) }, "fs_readlink stays inside the jail"
+unlink "/tmp/$rl_link"
+unlink "/tmp/$rl_target"
 
 val $exec_spec = Mcpd::Tools::sh_exec(+{ allow => ["echo"] })
 assert_match qr/allowed/, $exec_spec->{run}->(+{ command => "echo allowed" }), "sh_exec runs allowlisted command"
@@ -347,7 +360,7 @@ val $ih = mcp_connect("stdio:stryke $isrv")
 assert_ok Mcpd::Client::has_tool($ih, "fs_write"),  "integration: stock fs_write exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "fs_read"),   "integration: stock fs_read exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "greet"),     "integration: custom tool composed with stock pack"
-assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 25, "integration: 24 stock + 1 custom tool"
+assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 26, "integration: 25 stock + 1 custom tool"
 # write then read back through the live jailed server
 Mcpd::Client::call_text($ih, "fs_write", +{ path => "note.txt", content => "live-jailed" })
 assert_eq slurp("$jail/note.txt"), "live-jailed", "integration: fs_write landed inside the jail"
