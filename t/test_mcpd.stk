@@ -141,17 +141,18 @@ assert_dies fn { Mcpd::Tools::jail("/srv/data", "/etc/passwd") },      "jail blo
 
 # ── Tools specs are well-formed ──────────────────────────────────────
 val $pack = Mcpd::Tools::all(+{ root => "/tmp" })
-assert_eq Mcpd::Schema::validate_all($pack), 23,   "stock pack is 23 valid tools"
-assert_eq scalar(Mcpd::Tools::names()), 23,        "stock roster pinned at 23"
+assert_eq Mcpd::Schema::validate_all($pack), 24,   "stock pack is 24 valid tools"
+assert_eq scalar(Mcpd::Tools::names()), 24,        "stock roster pinned at 24"
 
 val $ro_pack = Mcpd::Tools::all(+{ root => "/tmp", readonly => 1 })
-assert_eq Mcpd::Schema::validate_all($ro_pack), 15, "readonly pack drops 8 mutating tools"
+assert_eq Mcpd::Schema::validate_all($ro_pack), 15, "readonly pack drops 9 mutating tools"
 val %ro_names = map { $_->{name} => 1 } @$ro_pack
 assert_ok !$ro_names{fs_copy},                     "readonly pack has no fs_copy"
 assert_ok !$ro_names{fs_move},                     "readonly pack has no fs_move"
 assert_ok !$ro_names{fs_write},                    "readonly pack has no fs_write"
 assert_ok !$ro_names{fs_append},                   "readonly pack has no fs_append"
 assert_ok !$ro_names{fs_mkdir},                    "readonly pack has no fs_mkdir"
+assert_ok !$ro_names{fs_touch},                    "readonly pack has no fs_touch"
 assert_ok !$ro_names{fs_rmdir},                    "readonly pack has no fs_rmdir"
 assert_ok !$ro_names{fs_delete},                   "readonly pack has no fs_delete"
 assert_ok !$ro_names{sh_exec},                     "readonly pack has no sh_exec"
@@ -166,6 +167,19 @@ val $tmp_file = "/tmp/mcpd-fsread-$$.txt"
 spurt($tmp_file, "jail-read-ok")
 assert_eq $read_spec->{run}->(+{ path => "mcpd-fsread-$$.txt" }), "jail-read-ok", "fs_read reads inside jail"
 unlink $tmp_file
+val $touch_spec = Mcpd::Tools::fs_touch(+{ root => "/tmp" })
+val $touch_file = "mcpd-fstouch-$$.txt"
+val $touch_path = "/tmp/$touch_file"
+unlink $touch_path if -e $touch_path
+assert_match qr/created/, $touch_spec->{run}->(+{ path => $touch_file }), "fs_touch creates a missing file"
+assert_ok -e $touch_path,                          "fs_touch's file exists on disk"
+assert_eq length(slurp($touch_path)), 0,           "fs_touch creates an empty file"
+spurt($touch_path, "keep me")
+assert_match qr/touched/, $touch_spec->{run}->(+{ path => $touch_file }), "fs_touch on an existing file reports touched"
+assert_eq slurp($touch_path), "keep me",           "fs_touch never truncates existing content"
+unlink $touch_path
+assert_dies fn { $touch_spec->{run}->(+{ path => "../etc/passwd" }) }, "fs_touch stays inside the jail"
+
 val $exec_spec = Mcpd::Tools::sh_exec(+{ allow => ["echo"] })
 assert_match qr/allowed/, $exec_spec->{run}->(+{ command => "echo allowed" }), "sh_exec runs allowlisted command"
 assert_dies fn { $exec_spec->{run}->(+{ command => "rm -rf /" }) }, "sh_exec blocks non-allowlisted command"
@@ -333,7 +347,7 @@ val $ih = mcp_connect("stdio:stryke $isrv")
 assert_ok Mcpd::Client::has_tool($ih, "fs_write"),  "integration: stock fs_write exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "fs_read"),   "integration: stock fs_read exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "greet"),     "integration: custom tool composed with stock pack"
-assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 24, "integration: 23 stock + 1 custom tool"
+assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 25, "integration: 24 stock + 1 custom tool"
 # write then read back through the live jailed server
 Mcpd::Client::call_text($ih, "fs_write", +{ path => "note.txt", content => "live-jailed" })
 assert_eq slurp("$jail/note.txt"), "live-jailed", "integration: fs_write landed inside the jail"
