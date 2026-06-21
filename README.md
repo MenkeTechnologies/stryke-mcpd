@@ -72,7 +72,7 @@ Mcpd::Server::log_to("$ENV{HOME}/.cache/calc.log")   # stdout stays clean
 Mcpd::Server::serve("calc", [
     Mcpd::Schema::tool("add", "Add two numbers",
         +{ a => "number", b => "number" },
-        fn { val $args = shift; $args->{a} + $args->{b} }),
+        fn { _->{a} + _->{b} }),
 
     @{ Mcpd::Tools::all(+{ root => getcwd() }) },     # stock pack, jailed
 ])
