@@ -558,6 +558,86 @@ fn Mcpd::Tools::fs_replace ($opts = undef) {
         })
 }
 
+## List the entries of a directory under $root that match a shell glob
+## pattern, returning their names relative to that directory, sorted. The
+## pattern-filtered companion of fs_list (which returns every entry): for
+## "*.log", "src/*.stk", etc. without pulling the whole listing into the
+## envelope and filtering client-side. opts: root. Read-only.
+fn Mcpd::Tools::fs_glob ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_glob", "List directory entries matching a shell glob under $root",
+        +{ path => "string", pattern => "string" },
+        fn {
+            val $args = shift
+            val $dir = Mcpd::Tools::jail($root, $args->{path});
+            die "not a directory: $args->{path}" unless -d $dir
+            val $pat = $args->{pattern};
+            val @hits = sort
+                map  { basename($_) }
+                grep { val $b = basename($_); $b ne "." && $b ne ".." }
+                glob("$dir/$pat")
+            join("\n", @hits)
+        })
+}
+
+## Count the entries (files, dirs, dotfiles) directly under a directory in the
+## jail — the non-recursive count companion of fs_list (which lists them) and
+## fs_du (which totals recursively). `.` and `..` are excluded. opts: root.
+## Read-only.
+fn Mcpd::Tools::fs_count ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_count", "Count the entries directly under a directory in $root",
+        +{ path => "string" },
+        fn {
+            val $args = shift
+            val $dir = Mcpd::Tools::jail($root, $args->{path});
+            die "not a directory: $args->{path}" unless -d $dir
+            # glob, not opendir — see fs_list note.
+            scalar grep { val $b = basename($_); $b ne "." && $b ne ".." }
+                (glob("$dir/.*"), glob("$dir/*"))
+        })
+}
+
+## Resolve a relative or absolute path through the jail and report the absolute
+## path it lands on inside $root — the realpath(1)/where-does-this-go companion
+## of the silent `jail` helper. An escape (`..` past root, an absolute path
+## outside root) dies, which the Server wrap turns into an ERROR result. For
+## confirming where a client-supplied path resolves before acting on it.
+## Read-only; does not require the path to exist.
+fn Mcpd::Tools::fs_realpath ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_realpath", "Resolve a path through the jail and report its absolute location under $root",
+        +{ path => "string" },
+        fn {
+            val $args = shift
+            Mcpd::Tools::jail($root, $args->{path})
+        })
+}
+
+## Change a file's permission mode under $root. `mode` is an octal string
+## ("644", "0755") — the chmod(1) form. Reports the file's mode after the
+## change as a 4-digit octal. The jail applies to the path. Mutating.
+fn Mcpd::Tools::fs_chmod ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_chmod", "Change a file's permission mode (octal string) under $root",
+        +{ path => "string", mode => "string" },
+        fn {
+            val $args = shift
+            val $file = Mcpd::Tools::jail($root, $args->{path});
+            die "no such path: $args->{path}" unless -e $file
+            val $raw = $args->{mode};
+            die "mode must be octal digits, got `$raw`" unless $raw =~ /^[0-7]+$/
+            val $bits = oct($raw);
+            chmod($bits, $file) or die "chmod failed: $args->{path}"
+            val @st = stat($file);
+            "mode: " . sprintf("%04o", $st[2] & 07777)
+        })
+}
+
 fn Mcpd::Tools::all ($opts = undef) {
     $opts //= +{}
     var @pack = (
@@ -576,6 +656,9 @@ fn Mcpd::Tools::all ($opts = undef) {
         Mcpd::Tools::fs_lines($opts),
         Mcpd::Tools::fs_grep_count($opts),
         Mcpd::Tools::fs_first_match($opts),
+        Mcpd::Tools::fs_glob($opts),
+        Mcpd::Tools::fs_count($opts),
+        Mcpd::Tools::fs_realpath($opts),
         Mcpd::Tools::env_get(),
         Mcpd::Tools::time_now(),
     )
@@ -583,6 +666,7 @@ fn Mcpd::Tools::all ($opts = undef) {
         push @pack, Mcpd::Tools::fs_write($opts)
         push @pack, Mcpd::Tools::fs_append($opts)
         push @pack, Mcpd::Tools::fs_replace($opts)
+        push @pack, Mcpd::Tools::fs_chmod($opts)
         push @pack, Mcpd::Tools::fs_mkdir($opts)
         push @pack, Mcpd::Tools::fs_touch($opts)
         push @pack, Mcpd::Tools::fs_rmdir($opts)
@@ -598,6 +682,6 @@ fn Mcpd::Tools::all ($opts = undef) {
 ## All stock tool names this sublib ships (full, non-readonly pack).
 fn Mcpd::Tools::names {
     qw(fs_read fs_list fs_grep fs_find fs_stat fs_readlink fs_du fs_head fs_tail fs_slice fs_hash fs_exists
-       fs_lines fs_grep_count fs_first_match env_get time_now fs_write fs_append fs_replace fs_mkdir fs_touch
-       fs_rmdir fs_delete fs_copy fs_move sh_exec sys_info)
+       fs_lines fs_grep_count fs_first_match fs_glob fs_count fs_realpath env_get time_now fs_write fs_append
+       fs_replace fs_chmod fs_mkdir fs_touch fs_rmdir fs_delete fs_copy fs_move sh_exec sys_info)
 }

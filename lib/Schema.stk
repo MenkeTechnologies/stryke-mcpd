@@ -229,3 +229,33 @@ fn Mcpd::Schema::summaries ($tools) {
     Mcpd::Schema::validate_all($tools)
     [ map { Mcpd::Schema::tool_summary($_) } @$tools ]
 }
+
+## Sorted names of a local tool set — the offline companion of
+## `Mcpd::Client::tool_names` (which lists a live server's tools over the
+## wire). Validates the set first so a malformed spec fails here rather than
+## at serve time. For a one-line roster of what a server WILL expose before
+## it is served.
+fn Mcpd::Schema::tool_names ($tools) {
+    Mcpd::Schema::validate_all($tools)
+    [ sort map { $_->{name} } @$tools ]
+}
+
+## True when \@tools is a well-formed, unique-named set — the non-dying boolean
+## companion of `validate_all` (which dies with a diagnostic). Lets a caller
+## probe a set without an `eval` wrapper. Returns 0 for anything `validate_all`
+## would reject (non-arrayref, partial spec, duplicate name).
+fn Mcpd::Schema::is_valid ($tools) {
+    eval { Mcpd::Schema::validate_all($tools) } ? 1 : 0
+}
+
+## The spec named $name from a tool set, or undef when no tool has that name.
+## The single-lookup companion of `tool_map` (which indexes the whole set) —
+## for a one-shot "does this set carry tool X, and what is it" without building
+## the full map. Validates the set first so a malformed spec fails here.
+fn Mcpd::Schema::find ($tools, $name) {
+    Mcpd::Schema::validate_all($tools)
+    for val $t (@$tools) {
+        return $t if ($t->{name} // "") eq $name
+    }
+    undef
+}

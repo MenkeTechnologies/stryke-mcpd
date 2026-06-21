@@ -141,11 +141,11 @@ assert_dies fn { Mcpd::Tools::jail("/srv/data", "/etc/passwd") },      "jail blo
 
 # ── Tools specs are well-formed ──────────────────────────────────────
 val $pack = Mcpd::Tools::all(+{ root => "/tmp" })
-assert_eq Mcpd::Schema::validate_all($pack), 28,   "stock pack is 28 valid tools"
-assert_eq scalar(Mcpd::Tools::names()), 28,        "stock roster pinned at 28"
+assert_eq Mcpd::Schema::validate_all($pack), 32,   "stock pack is 32 valid tools"
+assert_eq scalar(Mcpd::Tools::names()), 32,        "stock roster pinned at 32"
 
 val $ro_pack = Mcpd::Tools::all(+{ root => "/tmp", readonly => 1 })
-assert_eq Mcpd::Schema::validate_all($ro_pack), 18, "readonly pack drops 10 mutating tools"
+assert_eq Mcpd::Schema::validate_all($ro_pack), 21, "readonly pack drops 11 mutating tools"
 val %ro_names = map { $_->{name} => 1 } @$ro_pack
 assert_ok !$ro_names{fs_copy},                     "readonly pack has no fs_copy"
 assert_ok !$ro_names{fs_move},                     "readonly pack has no fs_move"
@@ -157,7 +157,11 @@ assert_ok !$ro_names{fs_rmdir},                    "readonly pack has no fs_rmdi
 assert_ok !$ro_names{fs_delete},                   "readonly pack has no fs_delete"
 assert_ok !$ro_names{sh_exec},                     "readonly pack has no sh_exec"
 assert_ok !$ro_names{fs_replace},                  "readonly pack has no fs_replace"
+assert_ok !$ro_names{fs_chmod},                    "readonly pack has no fs_chmod"
 assert_ok  $ro_names{fs_read},                     "readonly pack keeps fs_read"
+assert_ok  $ro_names{fs_glob},                     "readonly pack keeps fs_glob (read-only)"
+assert_ok  $ro_names{fs_count},                    "readonly pack keeps fs_count (read-only)"
+assert_ok  $ro_names{fs_realpath},                 "readonly pack keeps fs_realpath (read-only)"
 assert_ok  $ro_names{fs_readlink},                 "readonly pack keeps fs_readlink (read-only)"
 assert_ok  $ro_names{fs_grep_count},               "readonly pack keeps fs_grep_count (read-only)"
 assert_ok  $ro_names{fs_first_match},              "readonly pack keeps fs_first_match (read-only)"
@@ -351,9 +355,9 @@ val $ih = mcp_connect("stdio:stryke $isrv")
 assert_ok Mcpd::Client::has_tool($ih, "fs_write"),  "integration: stock fs_write exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "fs_read"),   "integration: stock fs_read exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "greet"),     "integration: custom tool composed with stock pack"
-assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 29, "integration: 28 stock + 1 custom tool"
+assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 33, "integration: 32 stock + 1 custom tool"
 # Client::tool_count / tool_descriptions over the live wire
-assert_eq Mcpd::Client::tool_count($ih), 29,        "integration: tool_count matches tool_names"
+assert_eq Mcpd::Client::tool_count($ih), 33,        "integration: tool_count matches tool_names"
 val $descs = Mcpd::Client::tool_descriptions($ih)
 assert_eq $descs->{greet}, "Greet someone",         "integration: tool_descriptions carries the custom tool's description"
 assert_ok exists $descs->{fs_read},                 "integration: tool_descriptions indexes stock tools"
@@ -373,6 +377,16 @@ val $listr = mcp_call($ih, "fs_read", +{ path => "doc.txt" })
 assert_eq join(",", @{ Mcpd::Client::text_lines($listr) }), "ALPHA,beta,ALPHA", "integration: text_lines splits a live result"
 assert_ok Mcpd::Client::block_count($listr) >= 1, "integration: block_count sees the result blocks"
 unlink "$jail/doc.txt"
+# new stock tools live: fs_glob filters, fs_count counts, Client::call_lines splits
+Mcpd::Client::call_text($ih, "fs_write", +{ path => "x.log", content => "1" })
+Mcpd::Client::call_text($ih, "fs_write", +{ path => "y.log", content => "2" })
+assert_eq Mcpd::Client::call_text($ih, "fs_glob", +{ path => ".", pattern => "*.log" }), "x.log\ny.log", "integration: fs_glob filters over the wire"
+val $globlines = Mcpd::Client::call_lines($ih, "fs_glob", +{ path => ".", pattern => "*.log" })
+assert_eq join(",", @$globlines), "x.log,y.log", "integration: call_lines splits a live result into rows"
+assert_ok Mcpd::Client::call_text($ih, "fs_count", +{ path => "." }) >= 2, "integration: fs_count counts live entries"
+assert_eq Mcpd::Client::call_text($ih, "fs_realpath", +{ path => "x.log" }), "$jail/x.log", "integration: fs_realpath reports the jailed path over the wire"
+unlink "$jail/x.log"
+unlink "$jail/y.log"
 # a jail escape comes back as an error envelope, unwrapped by error_message
 val $esc = mcp_call($ih, "fs_read", +{ path => "../../etc/passwd" })
 assert_ok Mcpd::Client::is_error($esc), "integration: jail escape returns an error envelope"
@@ -528,5 +542,71 @@ assert_dies fn { $rp->{run}->(+{ path => "../escape.txt", pattern => "x", replac
 unlink "$nroot/link"
 unlink "$nroot/log.txt"
 rmdir $nroot
+
+# ── Schema::tool_names / is_valid / find ─────────────────────────────
+val $set = [
+    Mcpd::Schema::tool("beta",  "B", +{}, fn { 1 }),
+    Mcpd::Schema::tool("alpha", "A", +{ x => "number" }, fn { 1 }),
+]
+assert_eq join(",", @{ Mcpd::Schema::tool_names($set) }), "alpha,beta", "tool_names returns sorted names of a local set"
+assert_dies fn { Mcpd::Schema::tool_names("nope") }, "tool_names validates the set"
+assert_eq Mcpd::Schema::is_valid($set), 1, "is_valid: 1 for a well-formed set"
+assert_eq Mcpd::Schema::is_valid("nope"), 0, "is_valid: 0 for a non-arrayref"
+assert_eq Mcpd::Schema::is_valid([$set->[0], $set->[0]]), 0, "is_valid: 0 for a duplicate name"
+assert_eq Mcpd::Schema::is_valid([+{ name => "x" }]), 0, "is_valid: 0 for a partial spec"
+val $found = Mcpd::Schema::find($set, "alpha")
+assert_eq $found->{description}, "A", "find returns the named spec"
+assert_eq $found->{parameters}{x}, "number", "find returns the full spec"
+assert_ok !defined Mcpd::Schema::find($set, "missing"), "find returns undef for an absent name"
+assert_dies fn { Mcpd::Schema::find("nope", "x") }, "find validates the set"
+
+# ── Client::call_lines / call_texts (envelope-shaped, no live server) ─
+# These compose mcp_call with text_lines/texts; exercise the underlying
+# extractors against the envelope shapes call_* would return.
+val $rows = +{ content => [ +{ type => "text", text => "r1\nr2\nr3" } ] }
+assert_eq join(",", @{ Mcpd::Client::text_lines($rows) }), "r1,r2,r3", "call_lines basis: text_lines splits joined body"
+val $blocks = +{ content => [ +{ type => "text", text => "a" }, +{ type => "text", text => "b" } ] }
+assert_eq join(",", @{ Mcpd::Client::texts($blocks) }), "a,b", "call_texts basis: texts keeps blocks unjoined"
+
+# ── Tools::fs_glob / fs_count / fs_realpath / fs_chmod (handler-level) ─
+val $groot = "/tmp/mcpd-glob-$$"
+mkdir $groot
+spurt("$groot/a.log", "1")
+spurt("$groot/b.log", "2")
+spurt("$groot/c.txt", "3")
+spurt("$groot/.hidden", "h")
+
+# fs_glob: shell-glob filter, names relative to the dir, sorted.
+val $gl = Mcpd::Tools::fs_glob(+{ root => $groot })
+assert_eq $gl->{run}->(+{ path => ".", pattern => "*.log" }), "a.log\nb.log", "fs_glob filters by pattern, sorted"
+assert_eq $gl->{run}->(+{ path => ".", pattern => "*.md" }), "", "fs_glob empty when nothing matches"
+assert_dies fn { $gl->{run}->(+{ path => "a.log", pattern => "*" }) }, "fs_glob dies on a non-directory"
+assert_dies fn { $gl->{run}->(+{ path => "../..", pattern => "*" }) }, "fs_glob honors the jail"
+
+# fs_count: non-recursive entry count incl. dotfiles, excl. . and ..
+val $cn = Mcpd::Tools::fs_count(+{ root => $groot })
+assert_eq $cn->{run}->(+{ path => "." }), 4, "fs_count counts entries incl. dotfiles, excl. dot/dotdot"
+assert_dies fn { $cn->{run}->(+{ path => "a.log" }) }, "fs_count dies on a non-directory"
+assert_dies fn { $cn->{run}->(+{ path => "../../etc" }) }, "fs_count honors the jail"
+
+# fs_realpath: resolve a path through the jail to its absolute location.
+val $rpth = Mcpd::Tools::fs_realpath(+{ root => $groot })
+assert_eq $rpth->{run}->(+{ path => "sub/x.txt" }), "$groot/sub/x.txt", "fs_realpath reports the jailed absolute path"
+assert_eq $rpth->{run}->(+{ path => "a/../b.txt" }), "$groot/b.txt", "fs_realpath collapses interior dotdot"
+assert_dies fn { $rpth->{run}->(+{ path => "../../etc/passwd" }) }, "fs_realpath dies on a jail escape"
+
+# fs_chmod: octal-string mode change, reports the resulting mode.
+val $ch = Mcpd::Tools::fs_chmod(+{ root => $groot })
+assert_eq $ch->{run}->(+{ path => "c.txt", mode => "600" }), "mode: 0600", "fs_chmod sets the mode and reports it"
+assert_eq $ch->{run}->(+{ path => "c.txt", mode => "0644" }), "mode: 0644", "fs_chmod accepts a leading-zero octal string"
+assert_dies fn { $ch->{run}->(+{ path => "c.txt", mode => "8x9" }) }, "fs_chmod rejects a non-octal mode"
+assert_dies fn { $ch->{run}->(+{ path => "missing.txt", mode => "644" }) }, "fs_chmod dies on a missing path"
+assert_dies fn { $ch->{run}->(+{ path => "../escape", mode => "644" }) }, "fs_chmod honors the jail"
+
+unlink "$groot/a.log"
+unlink "$groot/b.log"
+unlink "$groot/c.txt"
+unlink "$groot/.hidden"
+rmdir $groot
 
 test_run

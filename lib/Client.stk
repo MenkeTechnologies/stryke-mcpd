@@ -115,3 +115,19 @@ fn Mcpd::Client::block_count ($result) {
     return 0 unless ref($result) eq "HASH" && ref($result->{content}) eq "ARRAY"
     scalar @{ $result->{content} }
 }
+
+## `mcp_call` + `text_lines` in one step — the line-oriented round-trip
+## primitive. For a tool whose result is naturally a list of rows (a directory
+## listing, grep hits, `wc` output): call it and get back the lines as a list,
+## without the caller re-splitting `call_text`.
+fn Mcpd::Client::call_lines ($h, $name, $args) {
+    Mcpd::Client::text_lines(mcp_call($h, $name, $args // +{}))
+}
+
+## `mcp_call` + `texts` in one step — the multi-block round-trip primitive.
+## Returns every text block as a list (unjoined), in envelope order, for a tool
+## that emits logically separate text blocks (one per row/file) rather than one
+## concatenated body. The unjoined companion of `call_text`.
+fn Mcpd::Client::call_texts ($h, $name, $args) {
+    Mcpd::Client::texts(mcp_call($h, $name, $args // +{}))
+}
