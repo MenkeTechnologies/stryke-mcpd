@@ -141,11 +141,11 @@ assert_dies fn { Mcpd::Tools::jail("/srv/data", "/etc/passwd") },      "jail blo
 
 # ── Tools specs are well-formed ──────────────────────────────────────
 val $pack = Mcpd::Tools::all(+{ root => "/tmp" })
-assert_eq Mcpd::Schema::validate_all($pack), 24,   "stock pack is 24 valid tools"
-assert_eq scalar(Mcpd::Tools::names()), 24,        "stock roster pinned at 24"
+assert_eq Mcpd::Schema::validate_all($pack), 28,   "stock pack is 28 valid tools"
+assert_eq scalar(Mcpd::Tools::names()), 28,        "stock roster pinned at 28"
 
 val $ro_pack = Mcpd::Tools::all(+{ root => "/tmp", readonly => 1 })
-assert_eq Mcpd::Schema::validate_all($ro_pack), 15, "readonly pack drops 9 mutating tools"
+assert_eq Mcpd::Schema::validate_all($ro_pack), 18, "readonly pack drops 10 mutating tools"
 val %ro_names = map { $_->{name} => 1 } @$ro_pack
 assert_ok !$ro_names{fs_copy},                     "readonly pack has no fs_copy"
 assert_ok !$ro_names{fs_move},                     "readonly pack has no fs_move"
@@ -156,7 +156,11 @@ assert_ok !$ro_names{fs_touch},                    "readonly pack has no fs_touc
 assert_ok !$ro_names{fs_rmdir},                    "readonly pack has no fs_rmdir"
 assert_ok !$ro_names{fs_delete},                   "readonly pack has no fs_delete"
 assert_ok !$ro_names{sh_exec},                     "readonly pack has no sh_exec"
+assert_ok !$ro_names{fs_replace},                  "readonly pack has no fs_replace"
 assert_ok  $ro_names{fs_read},                     "readonly pack keeps fs_read"
+assert_ok  $ro_names{fs_readlink},                 "readonly pack keeps fs_readlink (read-only)"
+assert_ok  $ro_names{fs_grep_count},               "readonly pack keeps fs_grep_count (read-only)"
+assert_ok  $ro_names{fs_first_match},              "readonly pack keeps fs_first_match (read-only)"
 assert_ok  $ro_names{fs_tail},                     "readonly pack keeps fs_tail"
 assert_ok  $ro_names{fs_slice},                    "readonly pack keeps fs_slice"
 assert_ok  $ro_names{fs_hash},                     "readonly pack keeps fs_hash"
@@ -347,12 +351,28 @@ val $ih = mcp_connect("stdio:stryke $isrv")
 assert_ok Mcpd::Client::has_tool($ih, "fs_write"),  "integration: stock fs_write exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "fs_read"),   "integration: stock fs_read exposed live"
 assert_ok Mcpd::Client::has_tool($ih, "greet"),     "integration: custom tool composed with stock pack"
-assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 25, "integration: 24 stock + 1 custom tool"
+assert_eq scalar(@{ Mcpd::Client::tool_names($ih) }), 29, "integration: 28 stock + 1 custom tool"
+# Client::tool_count / tool_descriptions over the live wire
+assert_eq Mcpd::Client::tool_count($ih), 29,        "integration: tool_count matches tool_names"
+val $descs = Mcpd::Client::tool_descriptions($ih)
+assert_eq $descs->{greet}, "Greet someone",         "integration: tool_descriptions carries the custom tool's description"
+assert_ok exists $descs->{fs_read},                 "integration: tool_descriptions indexes stock tools"
 # write then read back through the live jailed server
 Mcpd::Client::call_text($ih, "fs_write", +{ path => "note.txt", content => "live-jailed" })
 assert_eq slurp("$jail/note.txt"), "live-jailed", "integration: fs_write landed inside the jail"
 assert_eq Mcpd::Client::call_text($ih, "fs_read", +{ path => "note.txt" }), "live-jailed", "integration: fs_read round-trips over the wire"
 assert_eq Mcpd::Client::call_text($ih, "greet", +{ who => "stryke" }), "hi stryke", "integration: custom tool runs over the wire"
+# new tools live: fs_first_match locates a hit, fs_replace rewrites in place
+Mcpd::Client::call_text($ih, "fs_write", +{ path => "doc.txt", content => "alpha\nbeta\nalpha" })
+assert_eq Mcpd::Client::call_text($ih, "fs_first_match", +{ path => "doc.txt", pattern => "beta" }), "2: beta", "integration: fs_first_match reports the hit line over the wire"
+assert_eq Mcpd::Client::call_text($ih, "fs_grep_count", +{ path => "doc.txt", pattern => "alpha" }), "2", "integration: fs_grep_count counts over the wire"
+assert_match qr/replaced 2 match/, Mcpd::Client::call_text($ih, "fs_replace", +{ path => "doc.txt", pattern => "alpha", replacement => "ALPHA" }), "integration: fs_replace rewrites over the wire"
+assert_eq slurp("$jail/doc.txt"), "ALPHA\nbeta\nALPHA", "integration: fs_replace landed inside the jail"
+# text_lines / block_count over a real envelope
+val $listr = mcp_call($ih, "fs_read", +{ path => "doc.txt" })
+assert_eq join(",", @{ Mcpd::Client::text_lines($listr) }), "ALPHA,beta,ALPHA", "integration: text_lines splits a live result"
+assert_ok Mcpd::Client::block_count($listr) >= 1, "integration: block_count sees the result blocks"
+unlink "$jail/doc.txt"
 # a jail escape comes back as an error envelope, unwrapped by error_message
 val $esc = mcp_call($ih, "fs_read", +{ path => "../../etc/passwd" })
 assert_ok Mcpd::Client::is_error($esc), "integration: jail escape returns an error envelope"
@@ -436,5 +456,77 @@ unlink "$troot/log.txt"
 unlink "$troot/out.txt"
 rmdir "$troot/sub"
 rmdir $troot
+
+# ── Schema: param_count / has_param / param_type / params_of_type / summaries ──
+val $sx = Mcpd::Schema::tool("mix", "Mix", +{ a => "number", b => "string", c => "number" }, fn { 1 })
+assert_eq Mcpd::Schema::param_count($sx), 3,        "param_count totals declared params"
+assert_eq Mcpd::Schema::param_count(Mcpd::Schema::tool("nop", "d", +{}, fn { 1 })), 0, "param_count: paramless is 0"
+assert_eq Mcpd::Schema::has_param($sx, "a"), 1,     "has_param: present param"
+assert_eq Mcpd::Schema::has_param($sx, "z"), 0,     "has_param: absent param"
+assert_eq Mcpd::Schema::param_type($sx, "b"), "string", "param_type: declared type"
+assert_ok !defined Mcpd::Schema::param_type($sx, "z"), "param_type: undef for an absent param"
+assert_eq join(",", @{ Mcpd::Schema::params_of_type($sx, "number") }), "a,c", "params_of_type: sorted names of a type"
+assert_eq scalar(@{ Mcpd::Schema::params_of_type($sx, "boolean") }), 0, "params_of_type: empty when none match"
+val $sums = Mcpd::Schema::summaries([$sx, Mcpd::Schema::tool("ping", "Ping", +{}, fn { 1 })])
+assert_eq scalar(@$sums), 2,                        "summaries: one entry per tool"
+assert_eq $sums->[1], "ping() - Ping",              "summaries: matches tool_summary"
+assert_dies fn { Mcpd::Schema::summaries("nope") }, "summaries: validates the set"
+
+# ── Client: text_lines / block_count (pure) ──────────────────────────
+val $cl = +{ content => [ +{ type => "text", text => "x\ny\nz" }, +{ type => "image", url => "u" } ] }
+assert_eq join(",", @{ Mcpd::Client::text_lines($cl) }), "x,y,z", "text_lines splits the joined text"
+assert_eq scalar(@{ Mcpd::Client::text_lines(+{}) }), 0,        "text_lines empty on missing content"
+assert_eq scalar(@{ Mcpd::Client::text_lines(+{ content => [ +{ type => "image", url => "u" } ] }) }), 0, "text_lines empty when no text blocks"
+assert_eq Mcpd::Client::block_count($cl), 2,        "block_count totals all blocks"
+assert_eq Mcpd::Client::block_count(+{}), 0,        "block_count 0 on missing content"
+
+# ── Server: checked / wrap_all_checked (arg-checked serving) ─────────
+val $cspec = Mcpd::Server::checked($sx)
+assert_eq $cspec->{name}, "mix",                    "checked preserves name"
+assert_eq join(",", @{ Mcpd::Schema::param_names($cspec) }), "a,b,c", "checked preserves parameters"
+val $okspec = Mcpd::Server::checked(Mcpd::Schema::tool("echo", "Echo", +{ a => "number" }, fn { val $a = shift; $a->{a} }))
+assert_eq $okspec->{run}->(+{ a => 7 }), 7,         "checked runs the body when args validate"
+assert_dies fn { $okspec->{run}->(+{}) },           "checked dies on a missing arg before the body"
+assert_dies fn { $okspec->{run}->(+{ a => "x" }) }, "checked dies on a bad arg type"
+assert_dies fn { $okspec->{run}->(+{ a => 1, z => 2 }) }, "checked dies on an undeclared arg"
+val $wac = Mcpd::Server::wrap_all_checked([$okspec])
+assert_eq scalar(@$wac), 1,                         "wrap_all_checked returns one spec per tool"
+assert_eq $wac->[0]{run}->(+{ a => 3 }), 3,         "wrap_all_checked passes a valid call through"
+assert_match qr/^ERROR: echo: missing required param `a`/, $wac->[0]{run}->(+{}), "wrap_all_checked turns a bad arg into an ERROR envelope"
+assert_dies fn { Mcpd::Server::wrap_all_checked("nope") }, "wrap_all_checked validates the set"
+
+# ── Tools: fs_readlink / fs_grep_count / fs_first_match / fs_replace ──
+val $nroot = "/tmp/mcpd-newtools-$$"
+mkdir $nroot
+spurt("$nroot/log.txt", "INFO start\nERROR boom\nINFO mid\nERROR again\nINFO end")
+system("ln -s '$nroot/log.txt' '$nroot/link'")
+
+# fs_readlink: read a symlink's target; dies on a non-symlink and on a jail escape.
+val $rl = Mcpd::Tools::fs_readlink(+{ root => $nroot })
+assert_eq $rl->{run}->(+{ path => "link" }), "$nroot/log.txt", "fs_readlink resolves a symlink target"
+assert_dies fn { $rl->{run}->(+{ path => "log.txt" }) }, "fs_readlink dies on a non-symlink"
+assert_dies fn { $rl->{run}->(+{ path => "../../etc/hosts" }) }, "fs_readlink honors the jail"
+
+# fs_grep_count: count matching lines (companion of fs_grep).
+val $gc = Mcpd::Tools::fs_grep_count(+{ root => $nroot })
+assert_eq $gc->{run}->(+{ path => "log.txt", pattern => "^ERROR" }), 2, "fs_grep_count counts matching lines"
+assert_eq $gc->{run}->(+{ path => "log.txt", pattern => "ZZZ" }), 0, "fs_grep_count is 0 with no match"
+
+# fs_first_match: first matching line, 1-based, as "N: line".
+val $fm = Mcpd::Tools::fs_first_match(+{ root => $nroot })
+assert_eq $fm->{run}->(+{ path => "log.txt", pattern => "^ERROR" }), "2: ERROR boom", "fs_first_match reports the first hit with its line number"
+assert_eq $fm->{run}->(+{ path => "log.txt", pattern => "ZZZ" }), "", "fs_first_match empty with no match"
+
+# fs_replace: regex search/replace in place, reports the substitution count.
+val $rp = Mcpd::Tools::fs_replace(+{ root => $nroot })
+assert_match qr/replaced 3 match/, $rp->{run}->(+{ path => "log.txt", pattern => "INFO", replacement => "NOTE" }), "fs_replace reports the substitution count"
+assert_eq slurp("$nroot/log.txt"), "NOTE start\nERROR boom\nNOTE mid\nERROR again\nNOTE end", "fs_replace rewrites the file in place"
+assert_match qr/replaced 0 match/, $rp->{run}->(+{ path => "log.txt", pattern => "ZZZ", replacement => "Y" }), "fs_replace reports 0 when nothing matches"
+assert_dies fn { $rp->{run}->(+{ path => "nope.txt", pattern => "x", replacement => "y" }) }, "fs_replace dies on a missing file"
+assert_dies fn { $rp->{run}->(+{ path => "../escape.txt", pattern => "x", replacement => "y" }) }, "fs_replace honors the jail"
+
+unlink "$nroot/link"
+unlink "$nroot/log.txt"
+rmdir $nroot
 
 test_run

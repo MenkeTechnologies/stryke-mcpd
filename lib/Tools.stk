@@ -480,6 +480,84 @@ fn Mcpd::Tools::fs_delete ($opts = undef) {
         })
 }
 
+## Read a symlink's target under $root — the readlink(1) companion of
+## fs_stat (which only reports type=link). Dies if the path is not a symlink.
+## Read-only.
+fn Mcpd::Tools::fs_readlink ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_readlink", "Read a symlink's target under $root",
+        +{ path => "string" },
+        fn {
+            val $args = shift
+            val $p = Mcpd::Tools::jail($root, $args->{path})
+            die "not a symlink: $args->{path}" unless -l $p
+            readlink($p) // die("readlink failed: $args->{path}")
+        })
+}
+
+## Count the lines of a file under $root that match a regex — the wc-style
+## companion of fs_grep (which returns the matching lines themselves). For
+## answering "how many hits" without pulling every match into the envelope.
+## Read-only.
+fn Mcpd::Tools::fs_grep_count ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_grep_count", "Count lines matching a regex in a file under $root",
+        +{ path => "string", pattern => "string" },
+        fn {
+            val $args = shift
+            # Direct /$pat/ interpolation, not qr// — see fs_grep note.
+            val $pat = $args->{pattern}
+            val @lines = split "\n", slurp(Mcpd::Tools::jail($root, $args->{path}))
+            scalar grep { /$pat/ } @lines
+        })
+}
+
+## Find the first line of a file under $root matching a regex and report it
+## as "N: <line>" (1-based line number). Returns "" when nothing matches.
+## The "jump to first hit" companion of fs_grep — for locating context before
+## an fs_slice. Read-only.
+fn Mcpd::Tools::fs_first_match ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_first_match", "Find the first line matching a regex in a file under $root (reports `N: line`)",
+        +{ path => "string", pattern => "string" },
+        fn {
+            val $args = shift
+            val $pat = $args->{pattern}
+            val @lines = split "\n", slurp(Mcpd::Tools::jail($root, $args->{path}))
+            var $n = 0
+            for val $line (@lines) {
+                $n += 1
+                return "$n: $line" if $line =~ /$pat/
+            }
+            ""
+        })
+}
+
+## Regex search-and-replace across a file under $root, rewriting it in place,
+## and report the number of substitutions. Params: path, pattern (regex),
+## replacement (string). The mutating counterpart of fs_grep. The jail applies
+## to the path. Mutating.
+fn Mcpd::Tools::fs_replace ($opts = undef) {
+    $opts //= +{}
+    val $root = $opts->{root} // getcwd()
+    Mcpd::Schema::tool("fs_replace", "Regex search-and-replace in a file under $root (reports the substitution count)",
+        +{ path => "string", pattern => "string", replacement => "string" },
+        fn {
+            val $args = shift
+            val $file = Mcpd::Tools::jail($root, $args->{path})
+            die "no such file: $args->{path}" unless -e $file
+            val $pat  = $args->{pattern}
+            val $repl = $args->{replacement}
+            var $text = slurp($file)
+            val $count = ($text =~ s/$pat/$repl/g)
+            spurt($file, $text)
+            "replaced " . ($count // 0) . " match(es) in $args->{path}"
+        })
+}
+
 fn Mcpd::Tools::all ($opts = undef) {
     $opts //= +{}
     var @pack = (
@@ -488,6 +566,7 @@ fn Mcpd::Tools::all ($opts = undef) {
         Mcpd::Tools::fs_grep($opts),
         Mcpd::Tools::fs_find($opts),
         Mcpd::Tools::fs_stat($opts),
+        Mcpd::Tools::fs_readlink($opts),
         Mcpd::Tools::fs_du($opts),
         Mcpd::Tools::fs_head($opts),
         Mcpd::Tools::fs_tail($opts),
@@ -495,12 +574,15 @@ fn Mcpd::Tools::all ($opts = undef) {
         Mcpd::Tools::fs_hash($opts),
         Mcpd::Tools::fs_exists($opts),
         Mcpd::Tools::fs_lines($opts),
+        Mcpd::Tools::fs_grep_count($opts),
+        Mcpd::Tools::fs_first_match($opts),
         Mcpd::Tools::env_get(),
         Mcpd::Tools::time_now(),
     )
     unless ($opts->{readonly}) {
         push @pack, Mcpd::Tools::fs_write($opts)
         push @pack, Mcpd::Tools::fs_append($opts)
+        push @pack, Mcpd::Tools::fs_replace($opts)
         push @pack, Mcpd::Tools::fs_mkdir($opts)
         push @pack, Mcpd::Tools::fs_touch($opts)
         push @pack, Mcpd::Tools::fs_rmdir($opts)
@@ -515,6 +597,7 @@ fn Mcpd::Tools::all ($opts = undef) {
 
 ## All stock tool names this sublib ships (full, non-readonly pack).
 fn Mcpd::Tools::names {
-    qw(fs_read fs_list fs_grep fs_find fs_stat fs_du fs_head fs_tail fs_slice fs_hash fs_exists
-       fs_lines env_get time_now fs_write fs_append fs_mkdir fs_touch fs_rmdir fs_delete fs_copy fs_move sh_exec sys_info)
+    qw(fs_read fs_list fs_grep fs_find fs_stat fs_readlink fs_du fs_head fs_tail fs_slice fs_hash fs_exists
+       fs_lines fs_grep_count fs_first_match env_get time_now fs_write fs_append fs_replace fs_mkdir fs_touch
+       fs_rmdir fs_delete fs_copy fs_move sh_exec sys_info)
 }

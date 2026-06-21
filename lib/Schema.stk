@@ -191,3 +191,41 @@ fn Mcpd::Schema::tool_map ($tools) {
 fn Mcpd::Schema::rename ($spec, $new_name) {
     Mcpd::Schema::tool($new_name, $spec->{description}, $spec->{parameters}, $spec->{run})
 }
+
+## How many parameters a spec declares. The scalar companion of
+## `param_names` — for log lines and arity checks that don't need the names.
+fn Mcpd::Schema::param_count ($spec) {
+    scalar keys %{ $spec->{parameters} // +{} }
+}
+
+## True when $spec declares a parameter named $name. Cheaper than scanning
+## `param_names`, and it's how a dispatcher decides whether an incoming
+## argument maps to a real parameter before calling `check_args`.
+fn Mcpd::Schema::has_param ($spec, $name) {
+    val $params = $spec->{parameters} // +{}
+    exists $params->{$name} ? 1 : 0
+}
+
+## The declared wire type of $spec's parameter $name (one of `types`), or
+## undef when the spec has no such parameter. The single-parameter lookup
+## that `to_json_schema` does for the whole set.
+fn Mcpd::Schema::param_type ($spec, $name) {
+    val $params = $spec->{parameters} // +{}
+    exists $params->{$name} ? $params->{$name} : undef
+}
+
+## Sorted names of the parameters of a given wire type — e.g.
+## `required_params_of_type($spec, "number")`. Lets a client group a tool's
+## inputs by type for form rendering or coercion. Empty list when none match.
+fn Mcpd::Schema::params_of_type ($spec, $type) {
+    val $params = $spec->{parameters} // +{}
+    [ sort grep { $params->{$_} eq $type } keys %$params ]
+}
+
+## Build a `tool_summary` for every spec in a set as a list (one string per
+## tool, roster order) — the array form of `describe` (which joins with
+## newlines). Validates the set first, so a malformed spec fails here.
+fn Mcpd::Schema::summaries ($tools) {
+    Mcpd::Schema::validate_all($tools)
+    [ map { Mcpd::Schema::tool_summary($_) } @$tools ]
+}

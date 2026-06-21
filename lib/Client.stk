@@ -80,3 +80,38 @@ fn Mcpd::Client::tool_schema ($h, $name) {
     }
     undef
 }
+
+## How many tools a connected server exposes. The scalar companion of
+## `tool_names` — for a one-line "connected: N tools" status without
+## materializing the name list.
+fn Mcpd::Client::tool_count ($h) {
+    scalar @{ mcp_tools($h) }
+}
+
+## A { name => description } map of every tool a connected server exposes —
+## the catalog a client renders in a tool picker. Tools that advertise no
+## description map to "".
+fn Mcpd::Client::tool_descriptions ($h) {
+    var %map
+    for val $t (@{ mcp_tools($h) }) {
+        $map{ $t->{name} } = $t->{description} // ""
+    }
+    \%map
+}
+
+## The joined text of a call result split into lines (newline-separated),
+## as a list. Empty list for an empty result. The line-oriented companion
+## of `text` — for results that are naturally a list of rows (a directory
+## listing, grep hits, `wc` output) without the caller re-splitting.
+fn Mcpd::Client::text_lines ($result) {
+    val $body = Mcpd::Client::text($result)
+    return [] if $body eq ""
+    [ split(/\n/, $body) ]
+}
+
+## The number of content blocks in a result (of every type), or 0 for an
+## empty/blockless result. The count companion of `texts`/`content_of_type`.
+fn Mcpd::Client::block_count ($result) {
+    return 0 unless ref($result) eq "HASH" && ref($result->{content}) eq "ARRAY"
+    scalar @{ $result->{content} }
+}

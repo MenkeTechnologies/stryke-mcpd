@@ -91,3 +91,41 @@ fn Mcpd::Server::audit ($name, $run) {
         $r
     }
 }
+
+## Build a spec whose run coderef checks its args against the spec's declared
+## parameters (`Mcpd::Schema::check_args`) before the real body runs — a
+## missing or mistyped argument dies with a named diagnostic, which `wrap`
+## then turns into an ERROR envelope rather than letting a half-validated
+## call reach the body. The arg-checked companion of `Schema::tool`.
+fn Mcpd::Server::checked ($spec) {
+    val $run = $spec->{run}
+    +{
+        name        => $spec->{name},
+        description => $spec->{description},
+        parameters  => $spec->{parameters},
+        run         => fn {
+            val $args = shift
+            Mcpd::Schema::check_args($spec, $args)
+            $run->($args)
+        },
+    }
+}
+
+## Return a copy of \@tools with every run coderef arg-checked (`checked`)
+## AND error-wrapped (`wrap`) — the strict serving variant of `wrap_all`.
+## Use it when every tool should reject malformed arguments at the door
+## instead of inside its body.
+fn Mcpd::Server::wrap_all_checked ($tools) {
+    Mcpd::Schema::validate_all($tools)
+    var @out
+    for val $t (@$tools) {
+        val $c = Mcpd::Server::checked($t)
+        push @out, +{
+            name        => $c->{name},
+            description => $c->{description},
+            parameters  => $c->{parameters},
+            run         => Mcpd::Server::wrap($c->{name}, $c->{run}),
+        }
+    }
+    \@out
+}
