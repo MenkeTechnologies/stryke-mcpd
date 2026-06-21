@@ -135,6 +135,169 @@
       </section>
 
       <section class="tutorial-section">
+        <h2>Reference &mdash; Mcpd::Schema</h2>
+        <p>Validated tool specs. <code>mcp_server_start</code> accepts any <code>+{name, description, parameters, run}</code> hashref and errors one tool at a time at serve time; Schema front-loads that into construction time with named diagnostics, so a malformed spec dies where it was written, not where it was served. A <em>spec</em> is the hashref <code>tool</code> returns; a <em>set</em> is an arrayref of specs.</p>
+        <table class="sub-tbl">
+          <thead><tr><th>Function</th><th>Signature</th><th>Returns / behavior</th></tr></thead>
+          <tbody>
+            <tr><td class="mod-name">tool</td><td><code>tool($name, $desc, $params, $run)</code></td><td>Validated spec hashref. Dies with the field name if <code>$name</code> is not an identifier (<code>/^[A-Za-z_][A-Za-z0-9_]*$/</code>), <code>$desc</code> is empty, <code>$params</code> is not a hashref, a param type is not one of <code>types</code>, or <code>$run</code> is not a coderef.</td></tr>
+            <tr><td class="mod-name">types</td><td><code>types()</code></td><td>The five wire param types: <code>string number boolean array object</code>.</td></tr>
+            <tr><td class="mod-name">check_args</td><td><code>check_args($spec, $args)</code></td><td>Returns <code>1</code>, or dies: every declared param must be present, no undeclared extras, and <code>number</code>/<code>array</code>/<code>object</code> are type-checked. Designed for the top of a run coderef.</td></tr>
+            <tr><td class="mod-name">validate_all</td><td><code>validate_all($tools)</code></td><td>Returns the tool count, or dies: <code>$tools</code> must be an arrayref of full specs (all four keys) with unique names.</td></tr>
+            <tr><td class="mod-name">is_valid</td><td><code>is_valid($tools)</code></td><td><code>1</code>/<code>0</code> &mdash; non-dying boolean form of <code>validate_all</code> (wraps it in <code>eval</code>).</td></tr>
+            <tr><td class="mod-name">param_names</td><td><code>param_names($spec)</code></td><td>Sorted arrayref of the spec's parameter names.</td></tr>
+            <tr><td class="mod-name">param_count</td><td><code>param_count($spec)</code></td><td>Scalar count of declared parameters &mdash; the scalar companion of <code>param_names</code>.</td></tr>
+            <tr><td class="mod-name">has_param</td><td><code>has_param($spec, $name)</code></td><td><code>1</code>/<code>0</code> &mdash; whether the spec declares a parameter named <code>$name</code>.</td></tr>
+            <tr><td class="mod-name">param_type</td><td><code>param_type($spec, $name)</code></td><td>The declared wire type of <code>$name</code>, or <code>undef</code> when there is no such parameter.</td></tr>
+            <tr><td class="mod-name">params_of_type</td><td><code>params_of_type($spec, $type)</code></td><td>Sorted arrayref of the parameter names of a given wire type; empty when none match.</td></tr>
+            <tr><td class="mod-name">tool_names</td><td><code>tool_names($tools)</code></td><td>Sorted arrayref of the names in a local set (validates first) &mdash; the offline companion of <code>Client::tool_names</code>.</td></tr>
+            <tr><td class="mod-name">find</td><td><code>find($tools, $name)</code></td><td>The spec named <code>$name</code> from a set, or <code>undef</code> (validates first) &mdash; single-lookup companion of <code>tool_map</code>.</td></tr>
+            <tr><td class="mod-name">to_json_schema</td><td><code>to_json_schema($spec)</code></td><td>The spec's params as an MCP <code>inputSchema</code>: <code>+{ type =&gt; "object", properties =&gt; {...}, required =&gt; [...] }</code>. Every declared param is required.</td></tr>
+            <tr><td class="mod-name">from_json_schema</td><td><code>from_json_schema($schema)</code></td><td>Inverse of <code>to_json_schema</code>: an <code>inputSchema</code> back into a <code>parameters</code> hashref. Dies if not an object schema or a property has no type.</td></tr>
+            <tr><td class="mod-name">to_tool_list</td><td><code>to_tool_list($tools)</code></td><td>The MCP <code>tools/list</code> payload: arrayref of <code>{name, description, inputSchema}</code> descriptors (validates first).</td></tr>
+            <tr><td class="mod-name">from_tool_list</td><td><code>from_tool_list($list)</code></td><td>Inverse of <code>to_tool_list</code>: descriptors back into <code>{name, description, parameters}</code> hashrefs. The wire format carries no executable, so there is no <code>run</code>.</td></tr>
+            <tr><td class="mod-name">tool_map</td><td><code>tool_map($tools)</code></td><td>A <code>{name =&gt; spec}</code> index for O(1) dispatch of a <code>tools/call</code> by name (validates first).</td></tr>
+            <tr><td class="mod-name">tool_summary</td><td><code>tool_summary($spec)</code></td><td>One-line signature: <code>name(a:number, b:string) - description</code>.</td></tr>
+            <tr><td class="mod-name">summaries</td><td><code>summaries($tools)</code></td><td>Arrayref of one <code>tool_summary</code> per tool, roster order (validates first) &mdash; array form of <code>describe</code>.</td></tr>
+            <tr><td class="mod-name">describe</td><td><code>describe($tools)</code></td><td>The whole set as a catalog &mdash; one <code>tool_summary</code> per line, newline-joined (validates first).</td></tr>
+            <tr><td class="mod-name">rename</td><td><code>rename($spec, $new_name)</code></td><td>A copy of the spec under a new name, re-validated; description / parameters / run preserved.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Reference &mdash; Mcpd::Server</h2>
+        <p>Validated serving with crash isolation. Two rules of stdio MCP servers, both enforced here: stdout belongs to the JSON-RPC protocol (diagnostics go to a log file), and a dying tool must not kill the server (every run coderef is wrapped so a <code>die</code> returns an <code>ERROR:</code> result instead of an EOF).</p>
+        <table class="sub-tbl">
+          <thead><tr><th>Function</th><th>Signature</th><th>Returns / behavior</th></tr></thead>
+          <tbody>
+            <tr><td class="mod-name">serve</td><td><code>serve($name, $tools)</code></td><td>Validate every spec, <code>wrap_all</code>, then <code>mcp_server_start</code> the stdio transport. Blocks for the life of the server &mdash; call it last.</td></tr>
+            <tr><td class="mod-name">wrap</td><td><code>wrap($name, $run)</code></td><td>A new coderef wrapping <code>$run</code>: a <code>die</code> inside the tool returns <code>"ERROR: &lt;message&gt;"</code> to the client (the <code>at FILE line N.</code> location is stripped) and is logged; the server keeps serving.</td></tr>
+            <tr><td class="mod-name">wrap_all</td><td><code>wrap_all($tools)</code></td><td>A copy of the set with every run coderef <code>wrap</code>ped; spec metadata preserved. Pure &mdash; builds new specs, never serves.</td></tr>
+            <tr><td class="mod-name">checked</td><td><code>checked($spec)</code></td><td>A copy of the spec whose run coderef calls <code>Schema::check_args</code> before the real body &mdash; a missing or mistyped arg dies before reaching the body.</td></tr>
+            <tr><td class="mod-name">wrap_all_checked</td><td><code>wrap_all_checked($tools)</code></td><td>A copy of the set with every run coderef arg-checked (<code>checked</code>) <em>and</em> error-wrapped (<code>wrap</code>) &mdash; the strict serving variant of <code>wrap_all</code> (validates first).</td></tr>
+            <tr><td class="mod-name">audit</td><td><code>audit($name, $run)</code></td><td>Like <code>wrap</code> but also logs successful calls (tool name + result byte length) &mdash; an audit trail.</td></tr>
+            <tr><td class="mod-name">log_to</td><td><code>log_to($path)</code></td><td>Route diagnostics to <code>$path</code> (appended, one line per event). Never logs to stdout.</td></tr>
+            <tr><td class="mod-name">log</td><td><code>log($msg)</code></td><td>Append a timestamped, newline-terminated line to the configured log file. No-op until <code>log_to</code> is called.</td></tr>
+            <tr><td class="mod-name">log_path</td><td><code>log_path()</code></td><td>The configured log path, or <code>undef</code> when <code>log_to</code> was never called.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Reference &mdash; Mcpd::Tools</h2>
+        <p>The root-jailed stock tool pack. Every tool that takes a path resolves it under the configured <code>root</code> via <code>jail</code>; an escape dies, and <code>Server::wrap</code> turns that into an <code>ERROR: path escapes root</code> result rather than a dead server. Each tool is a <code>Schema::tool</code> generator that takes the same <code>$opts</code> hashref (carrying <code>root</code>); call them directly, or assemble the whole pack with <code>all</code>.</p>
+        <table class="sub-tbl">
+          <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td class="mod-name">fs_read</td><td>Read a file's contents (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_list</td><td>List a directory's entries (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_glob</td><td>List entries matching a shell glob (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_count</td><td>Count entries in a directory (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_grep</td><td>Grep a file for a pattern (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_grep_count</td><td>Count matching lines for a pattern (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_first_match</td><td>First hit for a pattern plus its line number (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_find</td><td>Recursive file find, depth-capped (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_stat</td><td>File metadata (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_readlink</td><td>The target of a symlink (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_realpath</td><td>Resolve a path within the jail.</td></tr>
+            <tr><td class="mod-name">fs_du</td><td>Recursive size of a path (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_head</td><td>First N lines of a file (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_tail</td><td>Last N lines of a file (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_slice</td><td>A line range of a file (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_hash</td><td>Checksum of a file (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_exists</td><td>Whether a path exists (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_lines</td><td>Line count of a file (jailed path).</td></tr>
+            <tr><td class="mod-name">fs_write</td><td>Write content to a file (jailed path). <em>Mutating.</em></td></tr>
+            <tr><td class="mod-name">fs_append</td><td>Append content to a file (jailed path). <em>Mutating.</em></td></tr>
+            <tr><td class="mod-name">fs_replace</td><td>Regex <code>s///</code> over a file (jailed path). <em>Mutating.</em></td></tr>
+            <tr><td class="mod-name">fs_chmod</td><td>Set an octal file mode (jailed path). <em>Mutating.</em></td></tr>
+            <tr><td class="mod-name">fs_mkdir</td><td>Create a directory (jailed path). <em>Mutating.</em></td></tr>
+            <tr><td class="mod-name">fs_touch</td><td>Create an empty file / bump mtime (jailed path). <em>Mutating.</em></td></tr>
+            <tr><td class="mod-name">fs_rmdir</td><td>Remove a directory (jailed path). <em>Mutating.</em></td></tr>
+            <tr><td class="mod-name">fs_delete</td><td>Delete a file (jailed path). <em>Mutating.</em></td></tr>
+            <tr><td class="mod-name">fs_copy</td><td>Copy a file (jailed paths). <em>Mutating.</em></td></tr>
+            <tr><td class="mod-name">fs_move</td><td>Move/rename a file (jailed paths). <em>Mutating.</em></td></tr>
+            <tr><td class="mod-name">sh_exec</td><td>Run a shell command with an optional first-word allowlist. <em>Mutating.</em></td></tr>
+            <tr><td class="mod-name">env_get</td><td>Read an environment variable.</td></tr>
+            <tr><td class="mod-name">time_now</td><td>The current time.</td></tr>
+            <tr><td class="mod-name">sys_info</td><td>System information.</td></tr>
+            <tr><td class="mod-name">all</td><td>The whole pack as one arrayref. <code>all(+{root =&gt; ..., readonly =&gt; 1})</code> drops every mutating tool.</td></tr>
+            <tr><td class="mod-name">jail</td><td><code>jail($root, $path)</code> &mdash; the lexical path resolver every fs tool runs input through; escapes die.</td></tr>
+            <tr><td class="mod-name">names</td><td>The names of every stock tool this sublib ships (full, non-readonly pack).</td></tr>
+          </tbody>
+        </table>
+        <p>The full pack (<code>all(+{root =&gt; ...})</code>) is 32 tool specs; <code>all(+{root =&gt; ..., readonly =&gt; 1})</code> is 21 &mdash; it omits the 11 mutating tools (<code>fs_write</code>, <code>fs_append</code>, <code>fs_replace</code>, <code>fs_chmod</code>, <code>fs_mkdir</code>, <code>fs_touch</code>, <code>fs_rmdir</code>, <code>fs_delete</code>, <code>fs_copy</code>, <code>fs_move</code>, <code>sh_exec</code>).</p>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Reference &mdash; Mcpd::Client</h2>
+        <p>Result-envelope helpers for the client side. <code>mcp_connect</code>, <code>mcp_tools</code>, <code>mcp_call</code>, <code>mcp_close</code> are builtins &mdash; none re-wrapped here. What this sublib adds is unpacking the MCP result envelope (<code>+{content =&gt; [+{type =&gt; "text", text =&gt; ...}, ...]}</code>) and the call-then-unpack composites that round-trip tests live on. <code>$h</code> is a connection handle; <code>$result</code> is an <code>mcp_call</code> result.</p>
+        <table class="sub-tbl">
+          <thead><tr><th>Function</th><th>Signature</th><th>Returns / behavior</th></tr></thead>
+          <tbody>
+            <tr><td class="mod-name">text</td><td><code>text($result)</code></td><td>The result's text blocks joined into one string; <code>""</code> when there is no text content.</td></tr>
+            <tr><td class="mod-name">texts</td><td><code>texts($result)</code></td><td>Every text block as a list (unjoined), in envelope order; empty list when none.</td></tr>
+            <tr><td class="mod-name">text_lines</td><td><code>text_lines($result)</code></td><td>The joined text split into lines; empty list for an empty result.</td></tr>
+            <tr><td class="mod-name">content_types</td><td><code>content_types($result)</code></td><td>The distinct content-block types present, sorted (e.g. <code>["image","text"]</code>).</td></tr>
+            <tr><td class="mod-name">content_of_type</td><td><code>content_of_type($result, $type)</code></td><td>All content blocks of <code>$type</code> as full block hashrefs (keeping data/mimeType/resource); the general form of <code>texts</code>.</td></tr>
+            <tr><td class="mod-name">block_count</td><td><code>block_count($result)</code></td><td>The number of content blocks of every type; <code>0</code> for an empty result.</td></tr>
+            <tr><td class="mod-name">call_text</td><td><code>call_text($h, $name, $args)</code></td><td><code>mcp_call</code> + <code>text</code> in one step &mdash; the round-trip primitive.</td></tr>
+            <tr><td class="mod-name">call_lines</td><td><code>call_lines($h, $name, $args)</code></td><td><code>mcp_call</code> + <code>text_lines</code> &mdash; for tools whose result is a list of rows.</td></tr>
+            <tr><td class="mod-name">call_texts</td><td><code>call_texts($h, $name, $args)</code></td><td><code>mcp_call</code> + <code>texts</code> &mdash; the multi-block round-trip primitive.</td></tr>
+            <tr><td class="mod-name">is_error</td><td><code>is_error($result)</code></td><td><code>1</code>/<code>0</code> &mdash; whether the result is an <code>ERROR:</code> envelope (a tool that died behind <code>Server::wrap</code>).</td></tr>
+            <tr><td class="mod-name">error_message</td><td><code>error_message($result)</code></td><td>The error text without the <code>ERROR: </code> prefix, or <code>undef</code> when not an error envelope.</td></tr>
+            <tr><td class="mod-name">tool_names</td><td><code>tool_names($h)</code></td><td>The tool names a connected server exposes, sorted.</td></tr>
+            <tr><td class="mod-name">tool_count</td><td><code>tool_count($h)</code></td><td>How many tools a connected server exposes &mdash; scalar companion of <code>tool_names</code>.</td></tr>
+            <tr><td class="mod-name">tool_descriptions</td><td><code>tool_descriptions($h)</code></td><td>A <code>{name =&gt; description}</code> map of every exposed tool; no-description tools map to <code>""</code>.</td></tr>
+            <tr><td class="mod-name">has_tool</td><td><code>has_tool($h, $name)</code></td><td><code>1</code>/<code>0</code> &mdash; whether a connected server exposes a tool named <code>$name</code>.</td></tr>
+            <tr><td class="mod-name">tool_schema</td><td><code>tool_schema($h, $name)</code></td><td>The advertised JSON <code>inputSchema</code> of the tool named <code>$name</code>, or <code>undef</code>.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Configuration</h2>
+        <p>Two knobs drive the stock pack and serving discipline; everything else is the spec you pass to <code>serve</code>.</p>
+        <table class="sub-tbl">
+          <thead><tr><th>Setting</th><th>Where</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>root</code></td><td><code>Mcpd::Tools::all(+{ root =&gt; ... })</code> (and every <code>fs_*</code> generator)</td><td>The jail root. Relative tool paths anchor under it; <code>..</code> resolves but dies the moment it would climb above root; absolute paths outside root die.</td></tr>
+            <tr><td><code>readonly</code></td><td><code>Mcpd::Tools::all(+{ root =&gt; ..., readonly =&gt; 1 })</code></td><td>Drops the 11 mutating tools, leaving 21 read-only tools &mdash; for exposing a filesystem to a model without write/exec.</td></tr>
+            <tr><td>log path</td><td><code>Mcpd::Server::log_to($path)</code></td><td>Append-only diagnostics file. Without it, <code>log</code>/<code>audit</code> are no-ops and stdout stays clean by default.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Examples</h2>
+        <p>Four runnable scripts in <code>examples/</code>, each self-contained:</p>
+        <table class="sub-tbl">
+          <thead><tr><th>File</th><th>Shows</th></tr></thead>
+          <tbody>
+            <tr><td><code>examples/calc_server.stk</code></td><td>A minimal server: <code>add</code>, <code>reverse_text</code>, and <code>always_fails</code> (which <code>die</code>s to demonstrate the error envelope). The exact shape the round-trip test drives.</td></tr>
+            <tr><td><code>examples/round_trip.stk</code></td><td>The client side: <code>mcp_connect</code> to <code>calc_server.stk</code> over stdio, list tools, call <code>add</code>/<code>reverse_text</code>, call the dying tool, and prove the server survived.</td></tr>
+            <tr><td><code>examples/stock_server.stk</code></td><td>The stock pack jailed to the current directory, served on stdio &mdash; point any MCP client at it with <code>{ "command": "stryke", "args": ["examples/stock_server.stk"] }</code>.</td></tr>
+            <tr><td><code>examples/jailed_fs.stk</code></td><td>A live stdio round trip against the stock pack jailed to a temp dir: write a file, read it back, list it, then watch a <code>../../etc/passwd</code> escape come back as a blocked error envelope.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Troubleshooting</h2>
+        <table class="sub-tbl">
+          <thead><tr><th>Symptom</th><th>Cause / fix</th></tr></thead>
+          <tbody>
+            <tr><td>Client sees a corrupted JSON-RPC stream</td><td>Something wrote to stdout. In this package nothing in <code>lib/</code> prints to stdout (CI pins it); route your own diagnostics through <code>Mcpd::Server::log_to</code>, never <code>p</code>/<code>print</code> to stdout in a served tool.</td></tr>
+            <tr><td>A tool returns <code>ERROR: path escapes root</code></td><td>The requested path resolved outside the jail root. This is the jail working as designed; the server stays up. Pass a path under <code>root</code>, or widen <code>root</code>.</td></tr>
+            <tr><td>A tool returns <code>ERROR: ...</code> instead of a value</td><td>The tool <code>die</code>d; <code>Server::wrap</code> converted it to a result so the connection survives. Use <code>Mcpd::Client::error_message</code> to read the message; check the server log if <code>log_to</code> is configured.</td></tr>
+            <tr><td>A malformed spec dies at startup</td><td><code>Schema::tool</code>/<code>validate_all</code> front-load validation. Read the named diagnostic (it carries the offending tool and field) and fix the spec where it was written.</td></tr>
+            <tr><td>Diagnostics aren't being written</td><td><code>log</code>/<code>audit</code> are no-ops until <code>Mcpd::Server::log_to($path)</code> is called. Set it before <code>serve</code>.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="tutorial-section">
         <h2>Install</h2>
 <pre># From a release:
 s pkg install -g github.com/MenkeTechnologies/stryke-mcpd
@@ -158,7 +321,7 @@ Mcpd::Server::log_to("$ENV{HOME}/.cache/calc.log")   # stdout stays clean
 Mcpd::Server::serve("calc", [
     Mcpd::Schema::tool("add", "Add two numbers",
         +{ a =&gt; "number", b =&gt; "number" },
-        sub { val $args = shift; $args-&gt;{a} + $args-&gt;{b} }),
+        fn { val $args = shift; $args-&gt;{a} + $args-&gt;{b} }),
 
     @{ Mcpd::Tools::all(+{ root =&gt; getcwd() }) },     # stock pack, jailed
 ])
