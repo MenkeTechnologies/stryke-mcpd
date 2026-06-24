@@ -20,6 +20,8 @@
 
 ### [`strykelang`](https://github.com/MenkeTechnologies/strykelang) &middot; [`MenkeTechnologiesMeta`](https://github.com/MenkeTechnologies/MenkeTechnologiesMeta) · [`stryke-utils`](https://github.com/MenkeTechnologies/stryke-utils) · [`stryke-fleet`](https://github.com/MenkeTechnologies/stryke-fleet)
 
+### [`Read the Docs`](https://menketechnologies.github.io/stryke-mcpd/) &middot; [`Engineering Report`](https://menketechnologies.github.io/stryke-mcpd/report.html)
+
 ---
 
 ## Table of Contents
